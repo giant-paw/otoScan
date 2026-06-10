@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:scan_go/features/transaksi_masuk/presentation/scan_masuk_view.dart';
 import '../../master_barang/presentation/master_barang_view.dart';
 
 class MainLayout extends StatefulWidget {
@@ -15,7 +16,7 @@ class _MainLayoutState extends State<MainLayout> {
   final List<Widget> _pages = [
     const Center(child: Text('Dashboard Visual', style: TextStyle(fontSize: 24))),
     const MasterBarangView(),
-    const Center(child: Text('Barang Masuk (Hijau)', style: TextStyle(fontSize: 24))),
+    const ScanMasukView(),
     const Center(child: Text('Barang Keluar (Merah)', style: TextStyle(fontSize: 24))),
     const Center(child: Text('Laporan & Export Excel', style: TextStyle(fontSize: 24))),
   ];

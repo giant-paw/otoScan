@@ -3,56 +3,90 @@ import 'barang_model.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class MasterRepository {
-  final dbHelper = DatabaseHelper.instance;
-
-  // READ: Mengambil semua daftar barang
-  Future<List<BarangModel>> getAllBarang() async {
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('master_barang');
-    
-    // Konversi hasil database ke bentuk List Objek
-    return List.generate(maps.length, (i) {
-      return BarangModel.fromMap(maps[i]);
-    });
-  }
-
-  // CREATE: Menyimpan barang baru dari hasil Scan
-  Future<int> insertBarang(BarangModel barang) async {
-    final db = await dbHelper.database;
-    return await db.insert('master_barang', barang.toMap());
-  }
-
-  // UPDATE: Mengubah data barang (misal ganti harga atau update stok)
-  Future<int> updateBarang(BarangModel barang) async {
-    final db = await dbHelper.database;
-    return await db.update(
+  final _db = DatabaseHelper.instance;
+ 
+  Future<List<Barang>> getAllBarang({int limit = 150, int offset = 0}) async {
+    final db = await _db.database;
+    final result = await db.query(
       'master_barang',
-      barang.toMap(),
-      where: 'kode_scan = ?',
-      whereArgs: [barang.kodeScan],
+      limit: limit,
+      offset: offset,
+      orderBy: 'nama_barang ASC',
     );
+    return result.map((row) => Barang.fromMap(row)).toList();
   }
-
-  // DELETE: Menghapus barang jika salah input
-  Future<int> deleteBarang(String kodeScan) async {
-    final db = await dbHelper.database;
-    return await db.delete(
-      'master_barang',
-      where: 'kode_scan = ?',
-      whereArgs: [kodeScan],
-    );
-  }
-
-  Future<List<BarangModel>> searchBarang(String keyword) async {
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
+ 
+  Future<List<Barang>> searchBarang(String keyword) async {
+    final db = await _db.database;
+    final result = await db.query(
       'master_barang',
       where: 'nama_barang LIKE ? OR kode_scan LIKE ?',
       whereArgs: ['%$keyword%', '%$keyword%'],
-      limit: 100,
       orderBy: 'nama_barang ASC',
+      limit: 200,
     );
-    
-    return List.generate(maps.length, (i) => BarangModel.fromMap(maps[i]));
+    return result.map((row) => Barang.fromMap(row)).toList();
+  }
+ 
+  Future<bool> insertBarang(Barang barang) async {
+    try {
+      final db = await _db.database;
+      await db.insert(
+        'master_barang',
+        barang.toMap(),
+        // Jika kode sudah ada, tolak (jangan timpa)
+        conflictAlgorithm: ConflictAlgorithm.fail,
+      );
+      return true;
+    } catch (e) {
+      // Kode sudah terdaftar
+      return false;
+    }
+  }
+ 
+  // =============================================
+  // UPDATE: Edit data barang
+  // =============================================
+  Future<bool> updateBarang(Barang barang) async {
+    try {
+      final db = await _db.database;
+      final rowsAffected = await db.update(
+        'master_barang',
+        barang.toMap(),
+        where: 'kode_scan = ?',
+        whereArgs: [barang.kodeScan],
+      );
+      return rowsAffected > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+ 
+  Future<bool> deleteBarang(String kodeScan) async {
+    try {
+      final db = await _db.database;
+      final rowsAffected = await db.delete(
+        'master_barang',
+        where: 'kode_scan = ?',
+        whereArgs: [kodeScan],
+      );
+      return rowsAffected > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+ 
+  // =============================================
+  // CHECK: Cek apakah kode sudah terdaftar
+  // =============================================
+  Future<bool> isKodeExist(String kodeScan) async {
+    final db = await _db.database;
+    final result = await db.query(
+      'master_barang',
+      where: 'kode_scan = ?',
+      whereArgs: [kodeScan],
+      limit: 1,
+    );
+    return result.isNotEmpty;
   }
 }

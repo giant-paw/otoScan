@@ -4,6 +4,7 @@ import 'core/database/database_helper.dart';
 import 'features/auth/presentation/login_view.dart';
 import 'package:provider/provider.dart';
 import 'features/master_barang/presentation/controller/master_provider.dart';
+import 'features/transaksi_masuk/presentation/controller/scan_masuk_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +15,8 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => MasterProvider()..loadData()), // Langsung load data saat aplikasi nyala
+        ChangeNotifierProvider(create: (_) => MasterProvider()..loadData()), 
+        ChangeNotifierProvider(create: (_) => ScanMasukProvider()),
       ],
       child: const MyApp(),
     ),

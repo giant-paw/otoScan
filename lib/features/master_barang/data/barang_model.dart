@@ -1,4 +1,4 @@
-class BarangModel {
+class Barang {
   final String kodeScan;
   final String namaBarang;
   final String kategori;
@@ -6,7 +6,7 @@ class BarangModel {
   final int hargaJual;
   final int stokSisa;
 
-  BarangModel({
+  Barang({
     required this.kodeScan,
     required this.namaBarang,
     this.kategori = 'AHM',
@@ -15,19 +15,19 @@ class BarangModel {
     this.stokSisa = 0,
   });
 
-  // Mengubah data dari SQLite (Map) menjadi Objek Flutter
-  factory BarangModel.fromMap(Map<String, dynamic> map) {
-    return BarangModel(
-      kodeScan: map['kode_scan'],
-      namaBarang: map['nama_barang'],
-      kategori: map['kategori'] ?? 'AHM',
-      hargaAstra: map['harga_astra'] ?? 0,
-      hargaJual: map['harga_jual'] ?? 0,
-      stokSisa: map['stok_sisa'] ?? 0,
+  // Dari baris SQLite ke objek Dart
+  factory Barang.fromMap(Map<String, dynamic> map) {
+    return Barang(
+      kodeScan: map['kode_scan'] as String,
+      namaBarang: map['nama_barang'] as String,
+      kategori: map['kategori'] as String? ?? 'AHM',
+      hargaAstra: map['harga_astra'] as int? ?? 0,
+      hargaJual: map['harga_jual'] as int? ?? 0,
+      stokSisa: map['stok_sisa'] as int? ?? 0,
     );
   }
 
-  // Mengubah Objek Flutter menjadi format SQLite (Map) untuk di-save
+  // Dari objek Dart ke Map untuk SQLite
   Map<String, dynamic> toMap() {
     return {
       'kode_scan': kodeScan,
@@ -37,5 +37,24 @@ class BarangModel {
       'harga_jual': hargaJual,
       'stok_sisa': stokSisa,
     };
+  }
+
+  // Buat salinan objek dengan nilai yang diubah sebagian
+  Barang copyWith({
+    String? kodeScan,
+    String? namaBarang,
+    String? kategori,
+    int? hargaAstra,
+    int? hargaJual,
+    int? stokSisa,
+  }) {
+    return Barang(
+      kodeScan: kodeScan ?? this.kodeScan,
+      namaBarang: namaBarang ?? this.namaBarang,
+      kategori: kategori ?? this.kategori,
+      hargaAstra: hargaAstra ?? this.hargaAstra,
+      hargaJual: hargaJual ?? this.hargaJual,
+      stokSisa: stokSisa ?? this.stokSisa,
+    );
   }
 }

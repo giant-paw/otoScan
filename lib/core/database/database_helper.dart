@@ -42,7 +42,7 @@ class DatabaseHelper {
       CREATE TABLE master_barang (
         kode_scan TEXT PRIMARY KEY,
         nama_barang TEXT NOT NULL,
-        kategori TEXT DEFAULT 'AHM',
+        kategori TEXT DEFAULT 'PART',
         harga_astra INTEGER DEFAULT 0,
         harga_jual INTEGER DEFAULT 0,
         stok_sisa INTEGER DEFAULT 0
