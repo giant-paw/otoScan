@@ -6,31 +6,29 @@ import '../../../master_barang/data/master_repository.dart';
 import '../../../master_barang/presentation/controller/master_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────
-// STATE MACHINE — transisi lengkap
+// STATE MACHINE
 //
-//  idle ──scan ditemukan──────────────────────► found
+//  idle ──scan/pilih barang───────────────────► found
 //  found ──scan KODE SAMA──────────────────────► found (qty +1)
 //  found ──scan KODE BEDA──────────────────────► pendingSwitch
-//  found ──scan tidak ada di master────────────► found (snack, tidak reset)
-//  pendingSwitch ──konfirmasi simpan & ganti───► simpan lama, pindah ke found baru
-//  pendingSwitch ──batalkan──────────────────── ► found (barang lama)
+//  found ──scan tidak ada di master────────────► found (snack)
+//  pendingSwitch ──simpan & ganti──────────────► simpan lama, jadi found baru
+//  pendingSwitch ──abaikan─────────────────────► found (kembali ke aktif)
 //  found / pendingSwitch ──simpan──────────────► idle
-//  found / pendingSwitch ──reset───────────────► idle
+//  found ──batal───────────────────────────────► idle
 //  idle ──scan tidak ada──────────────────────► notFound
-//  notFound ──reset────────────────────────────► idle
-//  saving ──selesai──────────────────────────── ► idle
-//  error ──reset────────────────────────────────► idle
+//  notFound ──tutup────────────────────────────► idle
 // ─────────────────────────────────────────────────────────────────
 
 enum ScanStatus { idle, found, pendingSwitch, notFound, saving, error }
 
 enum ScanResult {
-  ignored,             // debounce aktif / sedang saving
-  newFound,            // barang baru, tidak ada yg aktif
-  accumulated,         // kode sama → qty+1
-  switchNeeded,        // kode beda, ada barang aktif
-  notFound,            // tidak ada di master, tidak ada barang aktif
-  notFoundWhileActive, // tidak ada di master, ada barang aktif → tidak ganggu
+  ignored,
+  newFound,
+  accumulated,
+  switchNeeded,
+  notFound,
+  notFoundWhileActive,
 }
 
 class ScanMasukProvider extends ChangeNotifier {
@@ -71,9 +69,7 @@ class ScanMasukProvider extends ChangeNotifier {
     return list;
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // INIT
-  // ─────────────────────────────────────────────────────────────
+  // ── INIT ──────────────────────────────────────────────────────
   Future<void> init(MasterProvider mp) async {
     _masterProvider = mp;
     _isLoading = true;
@@ -90,6 +86,7 @@ class ScanMasukProvider extends ChangeNotifier {
       _cacheLoaded = true;
     } catch (e) {
       _errorPesan = 'Gagal memuat data: $e';
+      _cacheLoaded = false;
     }
   }
 
@@ -102,20 +99,32 @@ class ScanMasukProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── AUTOCOMPLETE / SEARCH ──────────────────────────────────────
+  List<Barang> cariByKode(String keyword) {
+    if (keyword.length < 2) return [];
+    final kw = keyword.toUpperCase();
+    return _cache.values
+      .where((b) => b.kodeScan.toUpperCase().contains(kw))
+      .take(10)
+      .toList();
+  }
+
+  List<Barang> cariByNama(String keyword) {
+    if (keyword.length < 2) return [];
+    final kw = keyword.toLowerCase();
+    return _cache.values
+      .where((b) => b.namaBarang.toLowerCase().contains(kw))
+      .take(10)
+      .toList();
+  }
+
   // ─────────────────────────────────────────────────────────────
   // PROSES SCAN
-  //
-  // PENTING: method ini HANYA boleh dipanggil dari _scanCtrl.
-  // Scanner fisik SELALU diarahkan ke _scanCtrl, bukan _qtyCtrl.
-  // Lihat arsitektur di view: _qtyFocus tidak pernah menerima
-  // input dari scanner — hanya dari keyboard manual user.
   // ─────────────────────────────────────────────────────────────
   ScanResult prosesScan(String kodeScan) {
     final kode = kodeScan.trim().toUpperCase();
     if (kode.isEmpty) return ScanResult.ignored;
     if (_status == ScanStatus.saving) return ScanResult.ignored;
-
-    // Cegah proses saat pendingSwitch — tunggu user pilih dulu
     if (_status == ScanStatus.pendingSwitch) return ScanResult.ignored;
 
     final barang = _cache[kode];
@@ -123,7 +132,6 @@ class ScanMasukProvider extends ChangeNotifier {
     if (barang == null) {
       _errorPesan = 'Kode "$kode" tidak terdaftar di master barang.';
       if (_status == ScanStatus.found) {
-        // Ada barang aktif — tidak ganggu, cukup info via return value
         notifyListeners();
         return ScanResult.notFoundWhileActive;
       }
@@ -134,12 +142,10 @@ class ScanMasukProvider extends ChangeNotifier {
 
     if (_status == ScanStatus.found && _barangAktif != null) {
       if (barang.kodeScan == _barangAktif!.kodeScan) {
-        // ── Kode SAMA: akumulasi ──────────────────────────────
         _qty = (_qty + 1).clamp(1, _maxQty);
         notifyListeners();
         return ScanResult.accumulated;
       } else {
-        // ── Kode BEDA: minta konfirmasi ───────────────────────
         _barangPending = barang;
         _status = ScanStatus.pendingSwitch;
         notifyListeners();
@@ -147,7 +153,6 @@ class ScanMasukProvider extends ChangeNotifier {
       }
     }
 
-    // ── Idle / notFound → barang baru ─────────────────────────
     _barangAktif   = barang;
     _barangPending = null;
     _qty           = 1;
@@ -158,9 +163,9 @@ class ScanMasukProvider extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // PILIH MANUAL
+  // PILIH DARI AUTOCOMPLETE
   // ─────────────────────────────────────────────────────────────
-  ScanResult pilihBarangManual(Barang barang) {
+  ScanResult pilihBarang(Barang barang) {
     if (_status == ScanStatus.saving) return ScanResult.ignored;
     if (_status == ScanStatus.pendingSwitch) return ScanResult.ignored;
 
@@ -186,24 +191,47 @@ class ScanMasukProvider extends ChangeNotifier {
     return ScanResult.newFound;
   }
 
+  // Alias untuk kompatibilitas mundur
+  ScanResult pilihBarangManual(Barang barang) => pilihBarang(barang);
+
   // ─────────────────────────────────────────────────────────────
-  // KONFIRMASI SWITCH — simpan barang aktif, pindah ke pending
+  // ★★★ FIX BUG NULL CHECK ★★★
+  //
+  // ROOT CAUSE bug sebelumnya:
+  //   _doSimpan() me-reset _barangPending = null saat sukses,
+  //   lalu kode di sini coba: _barangAktif = _barangPending → null
+  //   Status di-set found tapi _barangAktif null → CRASH null check.
+  //
+  // FIX: Simpan _barangPending ke variabel lokal SEBELUM _doSimpan,
+  //      lalu gunakan variabel itu setelah simpan selesai.
   // ─────────────────────────────────────────────────────────────
   Future<String?> konfirmasiSwitch() async {
     if (_barangPending == null || _barangAktif == null) return null;
 
-    final err = await _doSimpan(_qty);
-    if (err != null) return err;
+    // SIMPAN reference sebelum _doSimpan menghapusnya
+    final Barang pendingTemp = _barangPending!;
 
-    _barangAktif   = _barangPending;
+    // _doSimpan akan reset _barangPending dan _barangAktif jadi null
+    final err = await _doSimpan(_qty);
+    if (err != null) {
+      // Kalau gagal simpan, biarkan _barangPending tetap utuh
+      // agar user bisa coba lagi atau batal
+      _barangPending = pendingTemp;
+      _status = ScanStatus.pendingSwitch;
+      notifyListeners();
+      return err;
+    }
+
+    // Sukses: pindahkan pending → aktif
+    _barangAktif   = pendingTemp;   // ← pakai variabel lokal, bukan _barangPending
     _barangPending = null;
     _qty           = 1;
+    _errorPesan    = '';
     _status        = ScanStatus.found;
     notifyListeners();
     return null;
   }
 
-  // Batalkan switch → kembali ke barang aktif
   void batalSwitch() {
     _barangPending = null;
     _status        = ScanStatus.found;
@@ -211,7 +239,7 @@ class ScanMasukProvider extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // SET / RESET QTY
+  // QTY CONTROL
   // ─────────────────────────────────────────────────────────────
   void setQty(int nilai) {
     _qty = nilai.clamp(0, _maxQty);
@@ -219,7 +247,13 @@ class ScanMasukProvider extends ChangeNotifier {
   }
 
   void resetQty() {
-    _qty = 1; // reset ke 1 bukan 0, lebih masuk akal untuk input barang
+    _qty = 1;
+    notifyListeners();
+  }
+
+  // Kosongkan qty (untuk tombol "Hapus angka")
+  void kosongkanQty() {
+    _qty = 0;
     notifyListeners();
   }
 
@@ -257,7 +291,6 @@ class ScanMasukProvider extends ChangeNotifier {
       if (lama != null) {
         _cache[lama.kodeScan] = lama.copyWith(stokSisa: lama.stokSisa + qty);
       }
-      // Reset ke idle bersih — view bertanggung jawab kembalikan fokus
       _status        = ScanStatus.idle;
       _barangAktif   = null;
       _barangPending = null;
@@ -289,15 +322,13 @@ class ScanMasukProvider extends ChangeNotifier {
       }
       await _muatRiwayat();
       _masterProvider?.loadData();
-      // PENTING: Setelah hapus, status tetap idle.
-      // View harus memanggil _fokusKeScan() setelah ini.
     }
     notifyListeners();
     return err;
   }
 
   // ─────────────────────────────────────────────────────────────
-  // REFRESH CACHE & HELPERS
+  // HELPERS
   // ─────────────────────────────────────────────────────────────
   Future<void> refreshCache(MasterProvider mp) async {
     _masterProvider = mp;
