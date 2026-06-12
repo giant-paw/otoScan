@@ -60,8 +60,12 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         TextFormField(
-                          controller: kodeCtrl, readOnly: isEdit,
-                          decoration: InputDecoration(labelText: 'Kode Scan *', filled: isEdit, fillColor: isEdit ? Colors.grey.shade100 : null),
+                          controller: kodeCtrl, 
+                          // Gembok dibuka: readOnly dihapus
+                          decoration: const InputDecoration(
+                            labelText: 'Kode Scan *', 
+                            hintText: 'Contoh: 06141-GN5-506'
+                          ),
                           validator: (v) => (v == null || v.trim().isEmpty) ? 'Kode scan tidak boleh kosong' : null,
                         ),
                         const SizedBox(height: 12),
@@ -99,7 +103,11 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                       kodeScan: kodeCtrl.text.trim(), namaBarang: namaCtrl.text.trim(), kategori: kategoriDipilih,
                       hargaAstra: int.tryParse(hargaAstraCtrl.text) ?? 0, hargaJual: int.tryParse(hargaJualCtrl.text) ?? 0, stokSisa: barangEdit?.stokSisa ?? 0,
                     );
-                    String? error = isEdit ? await provider.editBarang(barang) : await provider.tambahBarang(barang);
+                    
+                    String? error = isEdit 
+                        ? await provider.editBarang(barang, barangEdit!.kodeScan) 
+                        : await provider.tambahBarang(barang);
+
                     if (!ctx.mounted) return;
                     Navigator.pop(ctx);
                     _showSnackbar(context, error ?? (isEdit ? 'Barang diperbarui' : 'Barang ditambahkan'), isError: error != null);

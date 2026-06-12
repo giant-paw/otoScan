@@ -89,4 +89,33 @@ class MasterRepository {
     );
     return result.isNotEmpty;
   }
+
+  Future<bool> updateBarangCascade(Barang barang, String oldKode) async {
+    // Sesuaikan pemanggilan db ini dengan variabel database di repo mas
+    final db = await DatabaseHelper.instance.database; 
+    try {
+      await db.transaction((txn) async {
+        // 1. Update KTP di tabel master
+        await txn.update(
+          'master_barang',
+          barang.toMap(),
+          where: 'kode_scan = ?',
+          whereArgs: [oldKode],
+        );
+        
+        // 2. Jika KTP berubah, update juga semua riwayat masuk agar tidak putus
+        if (barang.kodeScan != oldKode) {
+          await txn.rawUpdate(
+            'UPDATE transaksi_masuk SET kode_scan = ? WHERE kode_scan = ?',
+            [barang.kodeScan, oldKode],
+          );
+        }
+      });
+      return true;
+    } catch (e) {
+      print('Error update cascade: $e');
+      return false;
+    }
+  }
+  
 }

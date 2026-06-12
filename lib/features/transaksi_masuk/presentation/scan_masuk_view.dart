@@ -51,17 +51,14 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   }
 
   // Fokus ke field input sesuai mode aktif (Fokus Abadi Scanner)
+  
   void _fokusKeInput() {
     if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_mode == 'scan') {
-        _scanCtrl.clear();
-        _scanFocus.requestFocus();
-      } else if (_mode == 'nama') {
-        _namaFocus.requestFocus();
-      }
-    });
+    if (_mode == 'scan') {
+      _scanFocus.requestFocus();
+    } else if (_mode == 'nama') {
+      _namaFocus.requestFocus();
+    }
   }
 
   void _syncQtyField(int qty) {
@@ -245,43 +242,56 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () { _fokusKeInput(); },
-      behavior: HitTestBehavior.translucent,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _buildHeader(),
-          const SizedBox(height: 12),
-          _buildModeToggle(),
-          const SizedBox(height: 12),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final bool isSempit = constraints.maxWidth < 800;
-                if (isSempit) {
-                  return Column(children: [
-                    _buildInputArea(),
-                    const SizedBox(height: 12),
-                    Expanded(child: _buildPreviewBarang()),
-                  ]);
-                }
-                return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(
-                    width: 440,
-                    child: Column(children: [
+    return Listener(
+      // ── PENJAGA FOKUS ABADI (Mencegah Scanner Mati) ──
+      onPointerUp: (_) {
+        // Tunggu 0.15 detik setelah admin mengklik apapun di layar
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (!mounted) return;
+          // Jika kursor hilang (admin tidak sedang fokus di kolom qty, nama, atau scan)
+          if (!_scanFocus.hasFocus && !_qtyFocus.hasFocus && !_namaFocus.hasFocus) {
+            _fokusKeInput(); // Paksa kursor balik ke Scanner!
+          }
+        });
+      },
+      child: GestureDetector(
+        onTap: () { _fokusKeInput(); },
+        behavior: HitTestBehavior.translucent,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _buildHeader(),
+            const SizedBox(height: 12),
+            _buildModeToggle(),
+            const SizedBox(height: 12),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final bool isSempit = constraints.maxWidth < 800;
+                  if (isSempit) {
+                    return Column(children: [
                       _buildInputArea(),
                       const SizedBox(height: 12),
                       Expanded(child: _buildPreviewBarang()),
-                    ]),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildRiwayatSesi()),
-                ]);
-              },
+                    ]);
+                  }
+                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SizedBox(
+                      width: 440,
+                      child: Column(children: [
+                        _buildInputArea(),
+                        const SizedBox(height: 12),
+                        Expanded(child: _buildPreviewBarang()),
+                      ]),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildRiwayatSesi()),
+                  ]);
+                },
+              ),
             ),
-          ),
-        ]),
+          ]),
+        ),
       ),
     );
   }

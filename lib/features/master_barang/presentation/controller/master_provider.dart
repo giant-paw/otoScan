@@ -154,12 +154,21 @@ class MasterProvider extends ChangeNotifier {
     return 'Gagal menyimpan barang.';
   }
 
-  // ─── EDIT barang ─────────────────────────────
-  Future<String?> editBarang(Barang barang) async {
-    final berhasil = await _repo.updateBarang(barang);
+  /// ─── EDIT barang ─────────────────────────────
+  Future<String?> editBarang(Barang barang, String oldKode) async {
+    // 1. Validasi: Jika kode diubah, pastikan kode baru belum dipakai barang lain!
+    if (barang.kodeScan != oldKode) {
+      final sudahAda = await _repo.isKodeExist(barang.kodeScan);
+      if (sudahAda) return 'Kode "${barang.kodeScan}" sudah dipakai barang lain!';
+    }
+
+    // 2. Panggil fungsi Cascade yang baru
+    final berhasil = await _repo.updateBarangCascade(barang, oldKode);
     if (berhasil) {
-      final idx = _semuaBarang.indexWhere((b) => b.kodeScan == barang.kodeScan);
+      // 3. Timpa data lama dengan data baru di memori lokal (RAM)
+      final idx = _semuaBarang.indexWhere((b) => b.kodeScan == oldKode);
       if (idx != -1) _semuaBarang[idx] = barang;
+      
       _terapkanFilterDanPencarian();
       return null;
     }
