@@ -5,16 +5,16 @@ import 'controller/master_provider.dart';
 import '../data/barang_model.dart';
 
 class BarangFormDialog {
-  // Fungsi statis agar bisa dipanggil dari layar mana pun
-  static Future<void> show(BuildContext context) async {
+  // Tambahkan parameter initialKode di sini
+  static Future<void> show(BuildContext context, {String? initialKode}) async {
     final provider = context.read<MasterProvider>();
 
-    final kodeCtrl = TextEditingController();
+    // Masukkan initialKode ke controller agar auto-fill
+    final kodeCtrl = TextEditingController(text: initialKode ?? '');
     final namaCtrl = TextEditingController();
     final hargaAstraCtrl = TextEditingController();
     final hargaJualCtrl = TextEditingController();
     
-    // Default kategori baru
     String kategoriDipilih = 'PART';
     final formKey = GlobalKey<FormState>();
 
@@ -42,10 +42,7 @@ class BarangFormDialog {
                       children: [
                         TextFormField(
                           controller: kodeCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Kode Scan *', 
-                            hintText: 'Contoh: 06141-GN5-506'
-                          ),
+                          decoration: const InputDecoration(labelText: 'Kode Scan *', hintText: 'Contoh: 06141-GN5-506'),
                           validator: (v) => (v == null || v.trim().isEmpty) ? 'Kode scan tidak boleh kosong' : null,
                         ),
                         const SizedBox(height: 12),
@@ -85,14 +82,13 @@ class BarangFormDialog {
                 FilledButton(
                   onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
-                    
                     final barang = Barang(
                       kodeScan: kodeCtrl.text.trim(),
                       namaBarang: namaCtrl.text.trim(),
                       kategori: kategoriDipilih,
                       hargaAstra: int.tryParse(hargaAstraCtrl.text) ?? 0,
                       hargaJual: int.tryParse(hargaJualCtrl.text) ?? 0,
-                      stokSisa: 0, // Awal daftar stok selalu 0, nanti diisi lewat fitur Masuk
+                      stokSisa: 0,
                     );
 
                     final error = await provider.tambahBarang(barang);

@@ -29,16 +29,21 @@ class TransaksiMasuk {
         'jam': jam,
       };
 
-  factory TransaksiMasuk.fromMap(Map<String, dynamic> map) => TransaksiMasuk(
-        id: map['id'] as int?,
-        kodeScan: map['kode_scan'] as String,
-        qty: map['qty'] as int? ?? 1,
-        hargaAstraSatuan: map['harga_astra_satuan'] as int? ?? 0,
-        tanggal: map['tanggal'] as String,
-        jam: map['jam'] as String,
-        namaBarang: map['nama_barang'] as String? ?? '',
-        kategori: map['kategori'] as String? ?? '',
-      );
+  factory TransaksiMasuk.fromMap(Map<String, dynamic> map) {
+    return TransaksiMasuk(
+      // Parsing kebal: Paksa ubah apapun jadi string dulu, baru convert ke int
+      id: map['id'] != null ? int.tryParse(map['id'].toString()) : null,
+      kodeScan: map['kode_scan']?.toString() ?? '',
+      qty: map['qty'] != null ? int.tryParse(map['qty'].toString()) ?? 1 : 1,
+      hargaAstraSatuan: map['harga_astra_satuan'] != null 
+          ? int.tryParse(map['harga_astra_satuan'].toString()) ?? 0 
+          : 0,
+      tanggal: map['tanggal']?.toString() ?? '',
+      jam: map['jam']?.toString() ?? '',
+      namaBarang: map['nama_barang']?.toString() ?? '',
+      kategori: map['kategori']?.toString() ?? '',
+    );
+  }
 
   int get totalModal => qty * hargaAstraSatuan;
 }
