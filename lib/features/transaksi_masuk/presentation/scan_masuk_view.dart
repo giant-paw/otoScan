@@ -20,13 +20,11 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   final _scanFocus  = FocusNode();
   final _qtyCtrl    = TextEditingController(text: '1');
   final _qtyFocus   = FocusNode();
-  final _kodeCtrl   = TextEditingController();
-  final _kodeFocus  = FocusNode();
   final _namaCtrl   = TextEditingController();
   final _namaFocus  = FocusNode();
 
   // ── State lokal ──────────────────────────────────────────────
-  String _mode = 'scan'; // 'scan' | 'kode' | 'nama'
+  String _mode = 'scan'; // Hanya 2 mode sekarang: 'scan' | 'nama'
   String _lastScanCode = '';
   DateTime _lastScanTime = DateTime(2000);
 
@@ -48,12 +46,11 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   void dispose() {
     _scanCtrl.dispose(); _scanFocus.dispose();
     _qtyCtrl.dispose();  _qtyFocus.dispose();
-    _kodeCtrl.dispose(); _kodeFocus.dispose();
     _namaCtrl.dispose(); _namaFocus.dispose();
     super.dispose();
   }
 
-  // Fokus ke field input sesuai mode aktif
+  // Fokus ke field input sesuai mode aktif (Fokus Abadi Scanner)
   void _fokusKeInput() {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -61,8 +58,6 @@ class _ScanMasukViewState extends State<ScanMasukView> {
       if (_mode == 'scan') {
         _scanCtrl.clear();
         _scanFocus.requestFocus();
-      } else if (_mode == 'kode') {
-        _kodeFocus.requestFocus();
       } else if (_mode == 'nama') {
         _namaFocus.requestFocus();
       }
@@ -84,10 +79,10 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     final kode = value.trim().toUpperCase();
     if (kode.isEmpty) { _fokusKeInput(); return; }
 
-    // Debounce 800ms
+    // Debounce dipercepat jadi 400ms agar scan ganda super cepat tetap terbaca
     final now = DateTime.now();
     if (kode == _lastScanCode &&
-        now.difference(_lastScanTime).inMilliseconds < 800) {
+        now.difference(_lastScanTime).inMilliseconds < 400) {
       _scanCtrl.clear();
       _fokusKeInput();
       return;
@@ -107,17 +102,11 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     switch (result) {
       case ScanResult.newFound:
         _syncQtyField(1);
-        Future.delayed(const Duration(milliseconds: 60), () {
-          if (!mounted) return;
-          _qtyFocus.requestFocus();
-          _qtyCtrl.selection = TextSelection(
-            baseOffset: 0, extentOffset: _qtyCtrl.text.length,
-          );
-        });
+        _fokusKeInput(); // Kunci fokus tetap di Scanner
       case ScanResult.accumulated:
         _syncQtyField(provider.qty);
         _showSnack('${provider.barangAktif?.namaBarang ?? "Barang"} — qty: ${provider.qty}', durasi: 1);
-        _fokusKeInput();
+        _fokusKeInput(); // Kunci fokus tetap di Scanner
       case ScanResult.switchNeeded:
         _showDialogSwitch(provider);
       case ScanResult.notFoundWhileActive:
@@ -131,20 +120,18 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // DIALOG SWITCH BARANG — FIX BUG NULL CHECK
+  // DIALOG SWITCH BARANG
   // ─────────────────────────────────────────────────────────────
   Future<void> _showDialogSwitch(ScanMasukProvider provider) async {
     final Barang? aktif   = provider.barangAktif;
     final Barang? pending = provider.barangPending;
 
-    // DEFENSIVE: kalau salah satu null, batalkan dengan aman
     if (aktif == null || pending == null) {
       provider.batalSwitch();
       _fokusKeInput();
       return;
     }
 
-    // Sinkron qty field ke provider sebelum dialog
     final int? qtyField = int.tryParse(_qtyCtrl.text.trim());
     if (qtyField != null && qtyField != provider.qty) {
       provider.setQty(qtyField);
@@ -194,21 +181,11 @@ class _ScanMasukViewState extends State<ScanMasukView> {
       if (!mounted) return;
       if (err != null) {
         _showSnack(err, isError: true);
-        // Provider sudah handle restore state ke pendingSwitch jika error
       } else {
-        // DEFENSIVE: cek barangAktif tidak null setelah switch
         final namaBaru = provider.barangAktif?.namaBarang;
         if (namaBaru != null) {
           _syncQtyField(provider.qty);
           _showSnack('Tersimpan. Sekarang: $namaBaru');
-          Future.delayed(const Duration(milliseconds: 60), () {
-            if (mounted) {
-              _qtyFocus.requestFocus();
-              _qtyCtrl.selection = TextSelection(
-                baseOffset: 0, extentOffset: _qtyCtrl.text.length,
-              );
-            }
-          });
         } else {
           provider.reset();
         }
@@ -216,7 +193,8 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     } else {
       provider.batalSwitch();
     }
-    _fokusKeInput();
+    
+    _fokusKeInput(); // Pastikan fokus kembali ke scanner
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -268,7 +246,7 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () { if (_mode == 'scan') _fokusKeInput(); },
+      onTap: () { _fokusKeInput(); },
       behavior: HitTestBehavior.translucent,
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -280,7 +258,6 @@ class _ScanMasukViewState extends State<ScanMasukView> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Responsif: kalau lebar < 800, stack vertikal
                 final bool isSempit = constraints.maxWidth < 800;
                 if (isSempit) {
                   return Column(children: [
@@ -339,11 +316,10 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     );
   }
 
-  // ── MODE TOGGLE ──────────────────────────────────────────────
+  // ── MODE TOGGLE (Merger Scan & Kode + Auto Clear) ────────────
   Widget _buildModeToggle() {
     return Wrap(spacing: 6, runSpacing: 6, children: [
-      _modeBtn('scan', Icons.qr_code_scanner_rounded, 'Scanner'),
-      _modeBtn('kode', Icons.dialpad_rounded, 'Input Kode'),
+      _modeBtn('scan', Icons.qr_code_scanner_rounded, 'Scan / Input Kode'),
       _modeBtn('nama', Icons.search_rounded, 'Cari Nama'),
     ]);
   }
@@ -352,6 +328,9 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     final bool aktif = _mode == mode;
     return GestureDetector(
       onTap: () {
+        // Otomatis kosongkan field saat pindah mode
+        _scanCtrl.clear();
+        _namaCtrl.clear();
         setState(() => _mode = mode);
         _fokusKeInput();
       },
@@ -390,13 +369,10 @@ class _ScanMasukViewState extends State<ScanMasukView> {
           color: _hijauTua.withValues(alpha: 0.25), width: 1.5),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Header dengan status cache
         Row(children: [
           Flexible(
             child: Text(
-              _mode == 'scan' ? 'Scan Barcode'
-                : _mode == 'kode' ? 'Input Kode Manual'
-                : 'Cari Nama Barang',
+              _mode == 'scan' ? 'Scan Barcode / Input Kode Manual' : 'Cari Nama Barang',
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
               overflow: TextOverflow.ellipsis,
             ),
@@ -419,25 +395,23 @@ class _ScanMasukViewState extends State<ScanMasukView> {
         ]),
         const SizedBox(height: 10),
 
-        // Field input — dinamis berdasarkan mode
-        if (_mode == 'scan') _buildFieldScan(),
-        if (_mode == 'kode') _AutocompleteWidget(
-          ctrl: _kodeCtrl, focus: _kodeFocus,
-          hintText: 'Ketik kode (min 2 karakter)...',
-          prefixIcon: Icons.barcode_reader,
+        if (_mode == 'scan') _AutocompleteWidget(
+          ctrl: _scanCtrl, focus: _scanFocus,
+          hintText: 'Tembakkan scanner atau ketik kode...',
+          prefixIcon: Icons.qr_code_scanner_rounded,
           isKode: true,
-          allowedFormatter: FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-]')),
+          allowedFormatter: FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-\s]')),
           onSubmit: (v) {
-            _kodeCtrl.clear();
             _onScanSubmit(v);
           },
           onPilih: (Barang b) {
-            _kodeCtrl.clear();
+            _scanCtrl.clear();
             final p = context.read<ScanMasukProvider>();
             final r = p.pilihBarang(b);
             _handleScanResult(r, p, b.kodeScan);
           },
         ),
+
         if (_mode == 'nama') _AutocompleteWidget(
           ctrl: _namaCtrl, focus: _namaFocus,
           hintText: 'Ketik nama barang (min 2 huruf)...',
@@ -445,7 +419,6 @@ class _ScanMasukViewState extends State<ScanMasukView> {
           isKode: false,
           allowedFormatter: null,
           onSubmit: (v) {
-            // Submit nama: kalau hasil 1 item, langsung pilih
             final p = context.read<ScanMasukProvider>();
             final hasil = p.cariByNama(v);
             if (hasil.length == 1) {
@@ -455,7 +428,6 @@ class _ScanMasukViewState extends State<ScanMasukView> {
             } else if (hasil.isEmpty) {
               _showSnack('Tidak ditemukan "$v"', isError: true);
             }
-            // Kalau > 1 hasil, biarkan dropdown tampil
           },
           onPilih: (Barang b) {
             _namaCtrl.clear();
@@ -467,8 +439,7 @@ class _ScanMasukViewState extends State<ScanMasukView> {
 
         const SizedBox(height: 6),
         Text(
-          _mode == 'scan' ? 'Scan kode sama → qty otomatis +1. Scan kode beda → konfirmasi ganti.'
-            : _mode == 'kode' ? 'Pilih dari saran, atau ketik kode lengkap lalu Enter.'
+          _mode == 'scan' ? 'Pilih saran atau tekan Enter setelah ketik. Scan ganda qty otomatis +1.'
             : 'Pilih dari saran nama barang.',
           style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500),
         ),
@@ -476,61 +447,17 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     );
   }
 
-  // Field scan barcode khusus
-  Widget _buildFieldScan() {
-    return TextField(
-      controller: _scanCtrl,
-      focusNode: _scanFocus,
-      onSubmitted: _onScanSubmit,
-      textInputAction: TextInputAction.done,
-      style: const TextStyle(fontSize: 15, fontFamily: 'monospace', letterSpacing: 1.2),
-      decoration: InputDecoration(
-        hintText: 'Tembakkan scanner ke sini...',
-        hintStyle: const TextStyle(fontSize: 12, letterSpacing: 0, color: Colors.grey),
-        prefixIcon: const Icon(Icons.qr_code_2_rounded, color: _hijauTua, size: 20),
-        suffix: SizedBox(
-          width: 32, height: 32,
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.send_rounded, color: _hijauTua, size: 18),
-            onPressed: () => _onScanSubmit(_scanCtrl.text),
-          ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: _hijauTua, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: _hijauTua, width: 2),
-        ),
-        filled: true,
-        fillColor: _hijauMuda,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      ),
-    );
-  }
-
   // ── PREVIEW BARANG AKTIF ─────────────────────────────────────
   Widget _buildPreviewBarang() {
     return Consumer<ScanMasukProvider>(
       builder: (_, ScanMasukProvider p, _) {
-        // DEFENSIVE: cek status & barangAktif
-        if (p.status == ScanStatus.notFound) {
-          return _buildKartuNotFound(p);
-        }
-        if (p.status == ScanStatus.error) {
-          return _buildKartuError(p);
-        }
-        if (p.status == ScanStatus.idle) {
-          return _buildKartuIdle();
-        }
-        // found / pendingSwitch / saving
+        if (p.status == ScanStatus.notFound) return _buildKartuNotFound(p);
+        if (p.status == ScanStatus.error) return _buildKartuError(p);
+        if (p.status == ScanStatus.idle) return _buildKartuIdle();
+        
         final Barang? b = p.barangAktif;
-        if (b == null) {
-          // Defensive: kalau status found tapi barangAktif null, reset
-          return _buildKartuIdle();
-        }
+        if (b == null) return _buildKartuIdle();
+        
         return _buildKartuBarang(p, b);
       },
     );
@@ -624,7 +551,7 @@ class _ScanMasukViewState extends State<ScanMasukView> {
     );
   }
 
-  // ── KARTU BARANG — ZERO OVERFLOW ─────────────────────────────
+  // ── KARTU BARANG ─────────────────────────────
   Widget _buildKartuBarang(ScanMasukProvider p, Barang b) {
     final bool isSaving  = p.status == ScanStatus.saving;
     final bool isPending = p.status == ScanStatus.pendingSwitch;
@@ -640,22 +567,18 @@ class _ScanMasukViewState extends State<ScanMasukView> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isPending
-                ? Colors.orange.withValues(alpha: 0.6)
-                : _hijauTua.withValues(alpha: 0.4),
+            color: isPending ? Colors.orange.withValues(alpha: 0.6) : _hijauTua.withValues(alpha: 0.4),
             width: 1.5,
           ),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-          // ── Nama + kategori (Wrap untuk hindari overflow) ────
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(b.namaBarang,
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2),
+                    overflow: TextOverflow.ellipsis, maxLines: 2),
                 const SizedBox(height: 2),
                 Text(b.kodeScan,
                     style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey)),
@@ -664,23 +587,17 @@ class _ScanMasukViewState extends State<ScanMasukView> {
             const SizedBox(width: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE3F2FD),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(b.kategori,
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF01579B))),
+              decoration: BoxDecoration(color: const Color(0xFFE3F2FD), borderRadius: BorderRadius.circular(20)),
+              child: Text(b.kategori, style: const TextStyle(fontSize: 10, color: Color(0xFF01579B))),
             ),
           ]),
 
-          // ── Banner pending switch ────────────────────────────
           if (isPending && p.barangPending != null) ...[
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.orange.shade200),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -698,10 +615,7 @@ class _ScanMasukViewState extends State<ScanMasukView> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () { p.batalSwitch(); _fokusKeInput(); },
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        side: BorderSide(color: Colors.grey.shade300),
-                      ),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 6), side: BorderSide(color: Colors.grey.shade300)),
                       child: Text('Abaikan', style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
                     ),
                   ),
@@ -709,10 +623,7 @@ class _ScanMasukViewState extends State<ScanMasukView> {
                   Expanded(
                     child: FilledButton(
                       onPressed: () => _showDialogSwitch(p),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.orange.shade700,
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                      ),
+                      style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade700, padding: const EdgeInsets.symmetric(vertical: 6)),
                       child: const Text('Simpan & Ganti', style: TextStyle(fontSize: 11)),
                     ),
                   ),
@@ -723,29 +634,22 @@ class _ScanMasukViewState extends State<ScanMasukView> {
 
           const SizedBox(height: 10),
 
-          // ── Chip info — pakai Wrap, bukan Row ────────────────
           Wrap(spacing: 6, runSpacing: 6, children: [
             _chip('Modal', _rp(b.hargaAstra)),
             _chip('Stok', '${b.stokSisa}',
-              warna: b.stokSisa == 0 ? Colors.red.shade700
-                  : b.stokSisa < 5   ? Colors.orange.shade700 : null),
+              warna: b.stokSisa == 0 ? Colors.red.shade700 : b.stokSisa < 5 ? Colors.orange.shade700 : null),
             _chip('Total', _rp(p.qty * b.hargaAstra), warna: _hijauTua),
           ]),
 
           const Divider(height: 18),
 
-          // ── Input qty — semua kontrol di sini ────────────────
-          const Text('Jumlah Masuk:',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+          const Text('Jumlah Masuk:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
           const SizedBox(height: 8),
 
-          // Row qty controls — pakai SingleChildScrollView agar tidak overflow
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
-              _qtyBtn('−', () {
-                if (p.qty > 1) { p.setQty(p.qty - 1); _syncQtyField(p.qty); }
-              }),
+              _qtyBtn('−', () { if (p.qty > 1) { p.setQty(p.qty - 1); _syncQtyField(p.qty); } _fokusKeInput(); }),
               const SizedBox(width: 5),
               SizedBox(
                 width: 64,
@@ -759,71 +663,37 @@ class _ScanMasukViewState extends State<ScanMasukView> {
                   decoration: InputDecoration(
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _hijauTua, width: 2),
-                    ),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _hijauTua, width: 2)),
                   ),
-                  onChanged: (v) {
-                    final int? n = int.tryParse(v);
-                    if (n != null) p.setQty(n);
-                  },
-                  onSubmitted: (_) => _simpan(),
+                  onChanged: (v) { final int? n = int.tryParse(v); if (n != null) p.setQty(n); },
+                  onSubmitted: (_) => _simpan(), // Bisa simpan pakai Enter jika di-klik manual
                 ),
               ),
               const SizedBox(width: 5),
-              _qtyBtn('+', () {
-                p.setQty(p.qty + 1); _syncQtyField(p.qty);
-              }),
+              _qtyBtn('+', () { p.setQty(p.qty + 1); _syncQtyField(p.qty); _fokusKeInput(); }),
               const SizedBox(width: 10),
-              // Tombol Reset — qty kembali ke 1
-              _kontrolBtn(
-                icon: Icons.refresh_rounded,
-                label: 'Reset',
-                color: Colors.blue.shade600,
-                onTap: () { p.setQty(1); _syncQtyField(1); _qtyFocus.requestFocus(); },
-              ),
+              _kontrolBtn(icon: Icons.refresh_rounded, label: 'Reset', color: Colors.blue.shade600, onTap: () { p.setQty(1); _syncQtyField(1); _fokusKeInput(); }),
               const SizedBox(width: 6),
-              // Tombol Hapus — kosongkan qty (jadi 0, user ketik baru)
-              _kontrolBtn(
-                icon: Icons.backspace_outlined,
-                label: 'Kosongkan',
-                color: Colors.grey.shade600,
-                onTap: () { p.kosongkanQty(); _syncQtyField(0); _qtyFocus.requestFocus(); },
-              ),
+              _kontrolBtn(icon: Icons.backspace_outlined, label: 'Kosongkan', color: Colors.grey.shade600, onTap: () { p.kosongkanQty(); _syncQtyField(0); _qtyFocus.requestFocus(); }),
             ]),
           ),
 
           const SizedBox(height: 10),
 
-          // ── Tombol Simpan & Batal ────────────────────────────
           Row(children: [
             Expanded(
               child: FilledButton(
                 onPressed: (isSaving || isPending) ? null : _simpan,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _hijauTua,
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
+                style: FilledButton.styleFrom(backgroundColor: _hijauTua, padding: const EdgeInsets.symmetric(vertical: 11), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 child: isSaving
-                    ? const SizedBox(width: 14, height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Simpan',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Simpan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
             ),
             const SizedBox(width: 6),
             OutlinedButton(
-              onPressed: isSaving ? null : () {
-                p.reset();
-                _syncQtyField(0);
-                _fokusKeInput();
-              },
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
+              onPressed: isSaving ? null : () { p.reset(); _syncQtyField(0); _fokusKeInput(); },
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
               child: const Text('Batal', style: TextStyle(fontSize: 13)),
             ),
           ]),
@@ -832,18 +702,11 @@ class _ScanMasukViewState extends State<ScanMasukView> {
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
+              decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.orange.shade200)),
               child: Row(children: [
                 Icon(Icons.info_outline_rounded, color: Colors.orange.shade700, size: 14),
                 const SizedBox(width: 5),
-                Expanded(child: Text(
-                  'Stok awal 0 — akan terisi setelah disimpan.',
-                  style: TextStyle(fontSize: 10.5, color: Colors.orange.shade800),
-                )),
+                Expanded(child: Text('Stok awal 0 — akan terisi setelah disimpan.', style: TextStyle(fontSize: 10.5, color: Colors.orange.shade800))),
               ]),
             ),
           ],
@@ -855,21 +718,15 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   // ── RIWAYAT SESI ─────────────────────────────────────────────
   Widget _buildRiwayatSesi() {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
       child: Column(children: [
         Consumer<ScanMasukProvider>(
           builder: (_, ScanMasukProvider p, _) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(children: [
-              const Text('Riwayat Hari Ini',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const Text('Riwayat Hari Ini', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               const Spacer(),
-              Text('${p.totalItemSesi} item',
-                  style: const TextStyle(fontSize: 11, color: _hijauTua)),
+              Text('${p.totalItemSesi} item', style: const TextStyle(fontSize: 11, color: _hijauTua)),
             ]),
           ),
         ),
@@ -881,11 +738,9 @@ class _ScanMasukViewState extends State<ScanMasukView> {
                 return Center(child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.history_rounded,
-                        color: Colors.grey.shade300, size: 36),
+                    Icon(Icons.history_rounded, color: Colors.grey.shade300, size: 36),
                     const SizedBox(height: 6),
-                    Text('Belum ada transaksi hari ini',
-                        style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                    Text('Belum ada transaksi hari ini', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
                   ]),
                 ));
               }
@@ -908,19 +763,13 @@ class _ScanMasukViewState extends State<ScanMasukView> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       child: Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(nama,
-              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1),
-          Text('${t.kodeScan} • ${t.jam}',
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontFamily: 'monospace'),
-              overflow: TextOverflow.ellipsis),
+          Text(nama, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+          Text('${t.kodeScan} • ${t.jam}', style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis),
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
           decoration: BoxDecoration(color: _hijauMuda, borderRadius: BorderRadius.circular(20)),
-          child: Text('+${t.qty}',
-              style: const TextStyle(fontWeight: FontWeight.bold, color: _hijauTua, fontSize: 11)),
+          child: Text('+${t.qty}', style: const TextStyle(fontWeight: FontWeight.bold, color: _hijauTua, fontSize: 11)),
         ),
         SizedBox(
           width: 28, height: 28,
@@ -944,11 +793,7 @@ class _ScanMasukViewState extends State<ScanMasukView> {
         content: Text('${t.qty}x $nama akan dihapus, stok dikembalikan.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Tidak')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya, Batalkan'),
-          ),
+          FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600), onPressed: () => Navigator.pop(ctx, true), child: const Text('Ya, Batalkan')),
         ],
       ),
     );
@@ -962,83 +807,55 @@ class _ScanMasukViewState extends State<ScanMasukView> {
   // ── HELPERS UI ───────────────────────────────────────────────
   Widget _chip(String label, String value, {Color? warna}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF6F9FC),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: Colors.grey.shade200),
-    ),
+    decoration: BoxDecoration(color: const Color(0xFFF6F9FC), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
     child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: TextStyle(fontSize: 9, color: Colors.grey.shade500)),
       const SizedBox(height: 1),
-      Text(value, style: TextStyle(
-        fontWeight: FontWeight.bold, fontSize: 11,
-        color: warna ?? Colors.black87,
-      )),
+      Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: warna ?? Colors.black87)),
     ]),
   );
 
   Widget _qtyBtn(String label, VoidCallback onTap) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(6),
+    onTap: onTap, borderRadius: BorderRadius.circular(6),
     child: Container(
-      width: 30, height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        border: Border.all(color: _hijauTua.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(6),
-        color: _hijauMuda.withValues(alpha: 0.3),
-      ),
+      width: 30, height: 30, alignment: Alignment.center,
+      decoration: BoxDecoration(border: Border.all(color: _hijauTua.withValues(alpha: 0.4)), borderRadius: BorderRadius.circular(6), color: _hijauMuda.withValues(alpha: 0.3)),
       child: Text(label, style: const TextStyle(fontSize: 18, color: _hijauTua, fontWeight: FontWeight.bold)),
     ),
   );
 
-  Widget _kontrolBtn({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(6),
+  Widget _kontrolBtn({required IconData icon, required String label, required Color color, required VoidCallback onTap}) => InkWell(
+    onTap: onTap, borderRadius: BorderRadius.circular(6),
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(6),
-      ),
+      decoration: BoxDecoration(border: Border.all(color: color.withValues(alpha: 0.4)), borderRadius: BorderRadius.circular(6)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 13, color: color),
-        const SizedBox(width: 4),
+        Icon(icon, size: 13, color: color), const SizedBox(width: 4),
         Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500)),
       ]),
     ),
   );
 
-  Widget _switchCard(String label, String nama, String kode, Color bg, Color fg) =>
-    Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.7))),
-        Text(nama,
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: fg),
-            overflow: TextOverflow.ellipsis),
-        Text(kode,
-            style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.6), fontFamily: 'monospace')),
-      ]),
-    );
+  Widget _switchCard(String label, String nama, String kode, Color bg, Color fg) => Container(
+    width: double.infinity, padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.7))),
+      Text(nama, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: fg), overflow: TextOverflow.ellipsis),
+      Text(kode, style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.6), fontFamily: 'monospace')),
+    ]),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────
-// WIDGET AUTOCOMPLETE TERPADU — untuk kode & nama
+// WIDGET AUTOCOMPLETE (Digabung dengan Mode Scan)
 // ─────────────────────────────────────────────────────────────────
 class _AutocompleteWidget extends StatefulWidget {
   final TextEditingController ctrl;
   final FocusNode focus;
   final String hintText;
   final IconData prefixIcon;
-  final bool isKode; // true=cari kode, false=cari nama
+  final bool isKode; 
   final TextInputFormatter? allowedFormatter;
   final Function(String) onSubmit;
   final Function(Barang) onPilih;
@@ -1067,9 +884,7 @@ class _AutocompleteWidgetState extends State<_AutocompleteWidget> {
       return;
     }
     final provider = context.read<ScanMasukProvider>();
-    final List<Barang> result = widget.isKode
-        ? provider.cariByKode(kw)
-        : provider.cariByNama(kw);
+    final List<Barang> result = widget.isKode ? provider.cariByKode(kw) : provider.cariByNama(kw);
     setState(() => _hasil = result);
   }
 
@@ -1091,35 +906,17 @@ class _AutocompleteWidgetState extends State<_AutocompleteWidget> {
         },
         inputFormatters: widget.allowedFormatter != null ? [widget.allowedFormatter!] : null,
         textCapitalization: widget.isKode ? TextCapitalization.characters : TextCapitalization.words,
-        style: TextStyle(
-          fontSize: 14,
-          fontFamily: widget.isKode ? 'monospace' : null,
-          letterSpacing: widget.isKode ? 1 : 0,
-        ),
+        style: TextStyle(fontSize: 14, fontFamily: widget.isKode ? 'monospace' : null, letterSpacing: widget.isKode ? 1 : 0),
         decoration: InputDecoration(
           hintText: widget.hintText,
           hintStyle: const TextStyle(fontSize: 12, letterSpacing: 0, color: Colors.grey),
           prefixIcon: Icon(widget.prefixIcon, color: const Color(0xFF01579B), size: 19),
           suffix: widget.ctrl.text.isNotEmpty
-              ? SizedBox(
-                  width: 28, height: 28,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.clear_rounded, size: 16),
-                    onPressed: _clear,
-                  ),
-                )
+              ? SizedBox(width: 28, height: 28, child: IconButton(padding: EdgeInsets.zero, icon: const Icon(Icons.clear_rounded, size: 16), onPressed: _clear))
               : null,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.blue.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF01579B), width: 2),
-          ),
-          filled: true,
-          fillColor: const Color(0xFFE3F2FD).withValues(alpha: 0.4),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.blue.shade300)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF01579B), width: 2)),
+          filled: true, fillColor: const Color(0xFFE3F2FD).withValues(alpha: 0.4),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         ),
       ),
@@ -1128,13 +925,8 @@ class _AutocompleteWidgetState extends State<_AutocompleteWidget> {
         Container(
           constraints: const BoxConstraints(maxHeight: 280),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6, offset: const Offset(0, 3),
-            )],
+            color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 3))],
           ),
           child: SingleChildScrollView(
             child: Column(
@@ -1144,42 +936,13 @@ class _AutocompleteWidgetState extends State<_AutocompleteWidget> {
                   padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                   child: Row(children: [
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(
-                        widget.isKode ? b.kodeScan : b.namaBarang,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 12,
-                          fontFamily: widget.isKode ? 'monospace' : null,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        widget.isKode ? b.namaBarang : b.kodeScan,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey.shade600,
-                          fontFamily: widget.isKode ? null : 'monospace',
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      Text(widget.isKode ? b.kodeScan : b.namaBarang, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, fontFamily: widget.isKode ? 'monospace' : null), overflow: TextOverflow.ellipsis),
+                      Text(widget.isKode ? b.namaBarang : b.kodeScan, style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontFamily: widget.isKode ? null : 'monospace'), overflow: TextOverflow.ellipsis),
                     ])),
                     const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE3F2FD),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(b.kategori,
-                          style: const TextStyle(fontSize: 9, color: Color(0xFF01579B))),
-                    ),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: const Color(0xFFE3F2FD), borderRadius: BorderRadius.circular(10)), child: Text(b.kategori, style: const TextStyle(fontSize: 9, color: Color(0xFF01579B)))),
                     const SizedBox(width: 6),
-                    Text('${b.stokSisa}',
-                        style: TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.w600,
-                          color: b.stokSisa == 0 ? Colors.red.shade600
-                              : b.stokSisa < 5 ? Colors.orange.shade700
-                              : Colors.grey.shade700,
-                        )),
+                    Text('${b.stokSisa}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: b.stokSisa == 0 ? Colors.red.shade600 : b.stokSisa < 5 ? Colors.orange.shade700 : Colors.grey.shade700)),
                   ]),
                 ),
               )).toList(),
