@@ -9,6 +9,7 @@ import 'package:scan_go/features/pelanggan/presentation/controller/pelanggan_pro
 import 'package:scan_go/features/transaksi_keluar/presentation/controller/cart_provider.dart';
 import 'package:scan_go/features/transaksi_keluar/presentation/controller/kasir_provider.dart';
 import 'package:scan_go/features/transaksi_keluar/presentation/controller/piutang_provider.dart';
+import 'package:scan_go/features/laporan/presentation/controller/laporan_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CartProvider()),
         ChangeNotifierProvider(create: (_) => KasirProvider()),
         ChangeNotifierProvider(create: (_) => PiutangProvider()),
+        ChangeNotifierProvider(create: (_) => LaporanProvider()),
       ],
       child: const MyApp(),
     ),

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'controller/master_provider.dart';
 import '../data/barang_model.dart';
 import 'services/import_export_service.dart';
+import 'barang_form_dialog.dart'; // Import form dialog eksternal
 
 class MasterBarangView extends StatefulWidget {
   const MasterBarangView({super.key});
@@ -25,101 +25,6 @@ class _MasterBarangViewState extends State<MasterBarangView> {
   String _formatRupiah(int angka) {
     if (angka == 0) return '-';
     return 'Rp ${angka.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
-  }
-
-  // ─── Dialog Tambah / Edit (Sama Seperti Sebelumnya) ───
-  Future<void> _showFormDialog(BuildContext context, {Barang? barangEdit}) async {
-    final isEdit = barangEdit != null;
-    final provider = context.read<MasterProvider>();
-
-    final kodeCtrl = TextEditingController(text: barangEdit?.kodeScan ?? '');
-    final namaCtrl = TextEditingController(text: barangEdit?.namaBarang ?? '');
-    final hargaAstraCtrl = TextEditingController(text: barangEdit != null && barangEdit.hargaAstra > 0 ? barangEdit.hargaAstra.toString() : '');
-    final hargaJualCtrl = TextEditingController(text: barangEdit != null && barangEdit.hargaJual > 0 ? barangEdit.hargaJual.toString() : '');
-    
-    final kategoriValid = ['PART', 'BUSI', 'OLI', 'BRG SLRG', 'NON AHM'];
-    String kategoriDipilih = barangEdit?.kategori ?? 'PART';
-    if (!kategoriValid.contains(kategoriDipilih)) kategoriDipilih = 'PART';
-    
-    final formKey = GlobalKey<FormState>();
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              title: Text(isEdit ? 'Edit Barang' : 'Tambah Barang Baru'),
-              content: SizedBox(
-                width: 480,
-                child: Form(
-                  key: formKey,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextFormField(
-                          controller: kodeCtrl, 
-                          // Gembok dibuka: readOnly dihapus
-                          decoration: const InputDecoration(
-                            labelText: 'Kode Scan *', 
-                            hintText: 'Contoh: 06141-GN5-506'
-                          ),
-                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Kode scan tidak boleh kosong' : null,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: namaCtrl,
-                          decoration: const InputDecoration(labelText: 'Nama Barang *'),
-                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Nama barang tidak boleh kosong' : null,
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: kategoriDipilih,
-                          decoration: const InputDecoration(labelText: 'Kategori'),
-                          items: kategoriValid.map((k) => DropdownMenuItem(value: k, child: Text(k))).toList(),
-                          onChanged: (v) => setDialogState(() => kategoriDipilih = v!),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(child: TextFormField(controller: hargaAstraCtrl, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], decoration: const InputDecoration(labelText: 'Harga Modal (Rp)'))),
-                            const SizedBox(width: 12),
-                            Expanded(child: TextFormField(controller: hargaJualCtrl, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], decoration: const InputDecoration(labelText: 'Harga Jual (Rp)'))),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
-                FilledButton(
-                  onPressed: () async {
-                    if (!formKey.currentState!.validate()) return;
-                    final barang = Barang(
-                      kodeScan: kodeCtrl.text.trim(), namaBarang: namaCtrl.text.trim(), kategori: kategoriDipilih,
-                      hargaAstra: int.tryParse(hargaAstraCtrl.text) ?? 0, hargaJual: int.tryParse(hargaJualCtrl.text) ?? 0, stokSisa: barangEdit?.stokSisa ?? 0,
-                    );
-                    
-                    String? error = isEdit 
-                        ? await provider.editBarang(barang, barangEdit!.kodeScan) 
-                        : await provider.tambahBarang(barang);
-
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    _showSnackbar(context, error ?? (isEdit ? 'Barang diperbarui' : 'Barang ditambahkan'), isError: error != null);
-                  },
-                  child: Text(isEdit ? 'Simpan' : 'Tambah'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   // ─── Dialog Konfirmasi Hapus SATU / BANYAK ───
@@ -151,7 +56,7 @@ class _MasterBarangViewState extends State<MasterBarangView> {
     }
   }
 
-  // ─── Dialog Hasil Import Excel (BARU) ────────
+  // ─── Dialog Hasil Import Excel ────────
   Future<void> _showImportResultDialog(BuildContext context, dynamic hasil) async {
     await showDialog(
       context: context,
@@ -182,33 +87,21 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                     child: Text('❌ Gagal / Error: ${hasil.error} baris', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
                   ),
 
-                // ── TAMPILKAN DAFTAR KODE DUPLIKAT JIKA ADA ──
                 if (hasil.listDuplikat.isNotEmpty) ...[
                   const Padding(padding: EdgeInsets.symmetric(vertical: 12.0), child: Divider(height: 1)),
                   const Text('Daftar Kode Duplikat (Dilewati):', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
                   const SizedBox(height: 8),
                   Container(
-                    height: 120, // Ketinggian list agar bisa discroll
+                    height: 120,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      border: Border.all(color: Colors.orange.shade200),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    decoration: BoxDecoration(color: Colors.orange.shade50, border: Border.all(color: Colors.orange.shade200), borderRadius: BorderRadius.circular(8)),
                     child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: hasil.listDuplikat.length,
-                      itemBuilder: (context, index) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6.0),
-                          child: Text('• ${hasil.listDuplikat[index]}', style: const TextStyle(fontSize: 13, color: Colors.deepOrange)),
-                        );
-                      },
+                      shrinkWrap: true, itemCount: hasil.listDuplikat.length,
+                      itemBuilder: (context, index) => Padding(padding: const EdgeInsets.only(bottom: 6.0), child: Text('• ${hasil.listDuplikat[index]}', style: const TextStyle(fontSize: 13, color: Colors.deepOrange))),
                     ),
                   ),
                 ],
 
-                // ── TAMPILKAN PESAN ERROR JIKA ADA ──
                 if (hasil.pesanError.isNotEmpty) ...[
                   const Padding(padding: EdgeInsets.symmetric(vertical: 12.0), child: Divider(height: 1)),
                   const Text('Detail Masalah Format:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -216,18 +109,10 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                   Container(
                     height: 120, 
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50, border: Border.all(color: Colors.red.shade200), borderRadius: BorderRadius.circular(8),
-                    ),
+                    decoration: BoxDecoration(color: Colors.red.shade50, border: Border.all(color: Colors.red.shade200), borderRadius: BorderRadius.circular(8)),
                     child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: hasil.pesanError.length,
-                      itemBuilder: (context, index) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6.0),
-                          child: Text('• ${hasil.pesanError[index]}', style: const TextStyle(fontSize: 13, color: Colors.redAccent)),
-                        );
-                      },
+                      shrinkWrap: true, itemCount: hasil.pesanError.length,
+                      itemBuilder: (context, index) => Padding(padding: const EdgeInsets.only(bottom: 6.0), child: Text('• ${hasil.pesanError[index]}', style: const TextStyle(fontSize: 13, color: Colors.redAccent))),
                     ),
                   ),
                 ]
@@ -266,7 +151,6 @@ class _MasterBarangViewState extends State<MasterBarangView> {
               ),
               const Spacer(),
               
-              // TAMPILKAN TOMBOL HAPUS JIKA ADA YANG DICENTANG
               Consumer<MasterProvider>(
                 builder: (_, provider, __) {
                   if (!provider.isMultiSelectMode) return const SizedBox.shrink();
@@ -291,9 +175,7 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                   } else if (value == 'import') {
                     final hasil = await _importExportService.importDariExcel();
                     if (hasil != null && context.mounted) {
-                      // PANGGIL MODAL POP-UP DI SINI (Gantikan Snackbar lama)
                       await _showImportResultDialog(context, hasil);
-                      
                       context.read<MasterProvider>().loadData();
                     }
                   } else if (value == 'export') {
@@ -315,7 +197,8 @@ class _MasterBarangViewState extends State<MasterBarangView> {
               ),
 
               FilledButton.icon(
-                onPressed: () => _showFormDialog(context),
+                // PANGGIL FORM DIALOG GLOBAL DI SINI
+                onPressed: () => BarangFormDialog.show(context),
                 icon: const Icon(Icons.add_rounded), label: const Text('Tambah Barang'),
                 style: FilledButton.styleFrom(backgroundColor: const Color(0xFF01579B), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
               ),
@@ -326,16 +209,13 @@ class _MasterBarangViewState extends State<MasterBarangView> {
           // ── FILTER & SEARCH BAR ──
           Row(
             children: [
-              // DROPDOWN FILTER KATEGORI (BARU)
               Consumer<MasterProvider>(
                 builder: (_, provider, __) => Container(
                   width: 160,
                   margin: const EdgeInsets.only(right: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white, 
-                    borderRadius: BorderRadius.circular(12), 
-                    border: Border.all(color: Colors.grey.shade300)
+                    color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -343,24 +223,13 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                       isExpanded: true,
                       icon: const Icon(Icons.filter_list_rounded, color: Colors.grey),
                       items: ['Semua', 'PART', 'BUSI', 'OLI', 'BRG SLRG', 'NON AHM']
-                          .map((k) => DropdownMenuItem(
-                                value: k, 
-                                child: Text(
-                                  k, // <--- Langsung tampilkan 'Semua', 'PART', dst.
-                                  style: TextStyle(
-                                    color: k == 'Semua' ? Colors.grey.shade700 : Colors.black87,
-                                    fontWeight: k == 'Semua' ? FontWeight.w500 : FontWeight.normal,
-                                  ),
-                                ),
-                              ))
-                          .toList(),
+                          .map((k) => DropdownMenuItem(value: k, child: Text(k, style: TextStyle(color: k == 'Semua' ? Colors.grey.shade700 : Colors.black87, fontWeight: k == 'Semua' ? FontWeight.w500 : FontWeight.normal)))).toList(),
                       onChanged: (v) => provider.setKategoriFilter(v!),
                     ),
                   ),
                 ),
               ),
 
-              // KOLOM PENCARIAN
               Expanded(
                 child: Consumer<MasterProvider>(
                   builder: (_, provider, __) => TextField(
@@ -390,15 +259,12 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                   return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.inbox_rounded, size: 60, color: Colors.grey), SizedBox(height: 12), Text('Tidak ada barang ditemukan', style: TextStyle(color: Colors.grey, fontSize: 16))]));
                 }
 
-                // Cek apakah semua barang yang tampil saat ini tercentang
-                final isAllVisibleSelected = provider.tampilBarang.isNotEmpty && 
-                    provider.tampilBarang.every((b) => provider.selectedItems.contains(b.kodeScan));
+                final isAllVisibleSelected = provider.tampilBarang.isNotEmpty && provider.tampilBarang.every((b) => provider.selectedItems.contains(b.kodeScan));
 
                 return Container(
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
                   child: Column(
                     children: [
-                      // HEADER TABEL
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                         decoration: const BoxDecoration(color: Color(0xFFE3F2FD), borderRadius: BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12))),
@@ -415,7 +281,6 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                           ],
                         ),
                       ),
-                      // ISI TABEL
                       Expanded(
                         child: ListView.separated(
                           itemCount: provider.tampilBarang.length,
@@ -423,7 +288,6 @@ class _MasterBarangViewState extends State<MasterBarangView> {
                           itemBuilder: (ctx, i) => _buildBarangRow(context, provider, provider.tampilBarang[i], i),
                         ),
                       ),
-                      // FOOTER
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12)), border: Border(top: BorderSide(color: Colors.grey.shade200))),
@@ -444,7 +308,6 @@ class _MasterBarangViewState extends State<MasterBarangView> {
     );
   }
 
-  // ── ROW TABEL DENGAN CHECKBOX ──
   Widget _buildBarangRow(BuildContext context, MasterProvider provider, Barang barang, int index) {
     final isSelected = provider.selectedItems.contains(barang.kodeScan);
     final stokColor = barang.stokSisa == 0 ? Colors.red : barang.stokSisa < 5 ? Colors.orange : Colors.green.shade700;
@@ -464,7 +327,8 @@ class _MasterBarangViewState extends State<MasterBarangView> {
           SizedBox(width: 80, child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              IconButton(tooltip: 'Edit barang', icon: const Icon(Icons.edit_rounded, size: 18, color: Color(0xFF0288D1)), onPressed: () => _showFormDialog(context, barangEdit: barang)),
+              // PANGGIL FORM DIALOG GLOBAL UNTUK EDIT DI SINI
+              IconButton(tooltip: 'Edit barang', icon: const Icon(Icons.edit_rounded, size: 18, color: Color(0xFF0288D1)), onPressed: () => BarangFormDialog.show(context, barangEdit: barang)),
               IconButton(tooltip: 'Hapus barang', icon: Icon(Icons.delete_rounded, size: 18, color: Colors.red.shade400), onPressed: () => _confirmHapus(context, barang: barang)),
             ],
           )),

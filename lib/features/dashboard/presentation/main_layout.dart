@@ -3,6 +3,7 @@ import 'package:scan_go/features/transaksi_masuk/presentation/scan_masuk_view.da
 import '../../master_barang/presentation/master_barang_view.dart';
 import 'package:scan_go/features/transaksi_keluar/presentation/scan_keluar_view.dart';
 import 'package:scan_go/features/transaksi_keluar/presentation/buku_piutang_view.dart';
+import 'package:scan_go/features/laporan/presentation/laporan_view.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -21,7 +22,7 @@ class _MainLayoutState extends State<MainLayout> {
     const ScanMasukView(),
     const ScanKeluarView(),
     const BukuPiutangView(),  
-    const Center(child: Text('Laporan & Export Excel', style: TextStyle(fontSize: 24))),
+    const LaporanView()
   ];
 
   @override
@@ -51,7 +52,7 @@ class _MainLayoutState extends State<MainLayout> {
                   _buildMenuItem(2, Icons.archive_rounded, "Barang Masuk"),
                   _buildMenuItem(3, Icons.unarchive_rounded, "Barang Keluar"),
                   _buildMenuItem(4, Icons.book_rounded, "Buku Piutang"),
-                  _buildMenuItem(4, Icons.insert_chart_rounded, "Laporan & Rekap"),
+                  _buildMenuItem(5, Icons.insert_chart_rounded, "Laporan & Rekap"),
                   const Spacer(),
                   const Divider(color: Colors.white24),
                   ListTile(

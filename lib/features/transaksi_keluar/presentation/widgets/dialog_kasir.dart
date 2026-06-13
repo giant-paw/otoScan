@@ -64,7 +64,10 @@ class _DialogKasirContentState extends State<_DialogKasirContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final kasir = context.read<KasirProvider>();
-      _uangCtrl.text = '${kasir.uangDiterima}';
+      
+      // Ubah baris ini agar saat pertama kali buka langsung pakai format ribuan
+      _uangCtrl.text = _formatRibuan(kasir.uangDiterima); 
+      
       // Auto-select agar gampang diganti
       _uangFocus.requestFocus();
       _uangCtrl.selection = TextSelection(
@@ -89,17 +92,44 @@ class _DialogKasirContentState extends State<_DialogKasirContent> {
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
   }
 
+  String _formatRibuan(int n) {
+    if (n == 0) return '0';
+    return n.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.'
+    );
+  }
+
   // ── Handlers ─────────────────────────────────────────────────
   void _setUang(int nilai) {
     final kasir = context.read<KasirProvider>();
     kasir.setUangDiterima(nilai);
-    _uangCtrl.text = '$nilai';
+    _uangCtrl.text = _formatRibuan(nilai); // Gunakan format titik
     _uangCtrl.selection = TextSelection.collapsed(offset: _uangCtrl.text.length);
   }
 
   void _onUangChanged(String v) {
-    final n = int.tryParse(v.replaceAll(RegExp(r'[^0-9]'), ''));
-    if (n != null) context.read<KasirProvider>().setUangDiterima(n);
+    // 1. Bersihkan semua titik/karakter selain angka
+    final bersih = v.replaceAll(RegExp(r'[^0-9]'), '');
+    if (bersih.isEmpty) {
+      context.read<KasirProvider>().setUangDiterima(0);
+      _uangCtrl.text = '';
+      return;
+    }
+
+    // 2. Ubah jadi integer
+    final n = int.tryParse(bersih);
+    if (n != null) {
+      context.read<KasirProvider>().setUangDiterima(n);
+      
+      // 3. Format kembali menjadi ada titiknya
+      final formatted = _formatRibuan(n);
+      
+      // 4. Update TextField dan tahan kursor agar selalu di ujung kanan
+      _uangCtrl.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
   }
 
   void _onNamaChanged(String v) {
