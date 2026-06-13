@@ -5,6 +5,10 @@ import 'features/auth/presentation/login_view.dart';
 import 'package:provider/provider.dart';
 import 'features/master_barang/presentation/controller/master_provider.dart';
 import 'features/transaksi_masuk/presentation/controller/scan_masuk_provider.dart';
+import 'package:scan_go/features/pelanggan/presentation/controller/pelanggan_provider.dart';
+import 'package:scan_go/features/transaksi_keluar/presentation/controller/cart_provider.dart';
+import 'package:scan_go/features/transaksi_keluar/presentation/controller/kasir_provider.dart';
+import 'package:scan_go/features/transaksi_keluar/presentation/controller/piutang_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,6 +21,10 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => MasterProvider()..loadData()), 
         ChangeNotifierProvider(create: (_) => ScanMasukProvider()),
+        ChangeNotifierProvider(create: (_) => PelangganProvider()),
+        ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => KasirProvider()),
+        ChangeNotifierProvider(create: (_) => PiutangProvider()),
       ],
       child: const MyApp(),
     ),

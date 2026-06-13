@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:scan_go/features/transaksi_masuk/presentation/scan_masuk_view.dart';
 import '../../master_barang/presentation/master_barang_view.dart';
+import 'package:scan_go/features/transaksi_keluar/presentation/scan_keluar_view.dart';
+import 'package:scan_go/features/transaksi_keluar/presentation/buku_piutang_view.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -17,7 +19,8 @@ class _MainLayoutState extends State<MainLayout> {
     const Center(child: Text('Dashboard Visual', style: TextStyle(fontSize: 24))),
     const MasterBarangView(),
     const ScanMasukView(),
-    const Center(child: Text('Barang Keluar (Merah)', style: TextStyle(fontSize: 24))),
+    const ScanKeluarView(),
+    const BukuPiutangView(),  
     const Center(child: Text('Laporan & Export Excel', style: TextStyle(fontSize: 24))),
   ];
 
@@ -47,6 +50,7 @@ class _MainLayoutState extends State<MainLayout> {
                   _buildMenuItem(1, Icons.dns_rounded, "Master Barang"),
                   _buildMenuItem(2, Icons.archive_rounded, "Barang Masuk"),
                   _buildMenuItem(3, Icons.unarchive_rounded, "Barang Keluar"),
+                  _buildMenuItem(4, Icons.book_rounded, "Buku Piutang"),
                   _buildMenuItem(4, Icons.insert_chart_rounded, "Laporan & Rekap"),
                   const Spacer(),
                   const Divider(color: Colors.white24),
