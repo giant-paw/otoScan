@@ -10,6 +10,7 @@ import 'package:scan_go/features/transaksi_keluar/presentation/controller/cart_p
 import 'package:scan_go/features/transaksi_keluar/presentation/controller/kasir_provider.dart';
 import 'package:scan_go/features/transaksi_keluar/presentation/controller/piutang_provider.dart';
 import 'package:scan_go/features/laporan/presentation/controller/laporan_provider.dart';
+import 'package:scan_go/features/dashboard/presentation/controller/dashboard_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => DashboardProvider()),
         ChangeNotifierProvider(create: (_) => MasterProvider()..loadData()), 
         ChangeNotifierProvider(create: (_) => ScanMasukProvider()),
         ChangeNotifierProvider(create: (_) => PelangganProvider()),

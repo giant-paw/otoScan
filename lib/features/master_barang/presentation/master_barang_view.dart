@@ -16,6 +16,8 @@ class _MasterBarangViewState extends State<MasterBarangView> {
   final _searchCtrl = TextEditingController();
   final _importExportService = ImportExportService();
 
+  
+
   @override
   void dispose() {
     _searchCtrl.dispose();

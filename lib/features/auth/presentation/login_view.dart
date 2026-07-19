@@ -61,7 +61,7 @@ class _LoginViewState extends State<LoginView> {
                   const Icon(Icons.inventory_2_rounded, size: 80, color: Color(0xFF0288D1)),
                   const SizedBox(height: 20),
                   const Text(
-                    "OtoScan Logistik",
+                    "OtoScan sdad Logistik",
                     style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF01579B)),
                   ),
                   const Text(
