@@ -62,6 +62,16 @@ class DatabaseHelper {
 
   Future<void> _createDB(Database db, int version) async {
     // ═══════════════════════════════════════════════════════════
+    // 0. APP SETTINGS (login, password ter-hash, setting lain)
+    // ═══════════════════════════════════════════════════════════
+    await db.execute('''
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+
+    // ═══════════════════════════════════════════════════════════
     // 1. MASTER BARANG
     // ═══════════════════════════════════════════════════════════
     await db.execute('''

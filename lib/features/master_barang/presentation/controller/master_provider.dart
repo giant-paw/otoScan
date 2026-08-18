@@ -2,29 +2,43 @@ import 'package:flutter/material.dart';
 import '../../data/barang_model.dart';
 import '../../data/master_repository.dart';
 
+// ─────────────────────────────────────────────────────────────────
+// FILTER STOK — untuk tab/chip filter di Master Barang
+//   semua   : tampilkan semua
+//   habis   : stok = 0
+//   menipis : stok 1..5 (perlu segera dipesan)
+//   banyak  : stok > 20 (menumpuk)
+// ─────────────────────────────────────────────────────────────────
+enum FilterStok { semua, habis, menipis, banyak }
+
 class MasterProvider extends ChangeNotifier {
   final _repo = MasterRepository();
 
   List<Barang> _semuaBarang = [];
-  List<Barang> _tampilBarang = []; 
+  List<Barang> _tampilBarang = []; // Yang tampil di tabel (search + filter)
   bool _isLoading = false;
   String _errorMessage = '';
   String _searchKeyword = '';
+  FilterStok _filterStok = FilterStok.semua;
 
-  // ─── FITUR BARU: FILTER & MULTI-SELECT ────────
-  String _kategoriFilter = 'Semua';
-  final Set<String> _selectedItems = {}; // Menyimpan kode_scan yang dicentang
+  // Ambang batas (samakan dengan Stok & Pesanan)
+  static const int batasMenipis = 5;  // 1..5
+  static const int batasBanyak  = 20; // > 20
 
+  // ─── Getters ─────────────────────────────────
   List<Barang> get tampilBarang => _tampilBarang;
   bool get isLoading => _isLoading;
   String get errorMessage => _errorMessage;
   int get totalBarang => _semuaBarang.length;
-  
-  String get kategoriFilter => _kategoriFilter;
-  Set<String> get selectedItems => _selectedItems;
-  bool get isMultiSelectMode => _selectedItems.isNotEmpty;
+  FilterStok get filterStok => _filterStok;
 
-  // ─── LOAD awal ────
+  // Hitung jumlah per kategori stok (untuk badge di chip)
+  int get jumlahSemua   => _semuaBarang.length;
+  int get jumlahHabis   => _semuaBarang.where((b) => b.stokSisa == 0).length;
+  int get jumlahMenipis => _semuaBarang.where((b) => b.stokSisa > 0 && b.stokSisa <= batasMenipis).length;
+  int get jumlahBanyak  => _semuaBarang.where((b) => b.stokSisa > batasBanyak).length;
+
+  // ─── LOAD awal (dipanggil dari main.dart) ────
   Future<void> loadData() async {
     _isLoading = true;
     _errorMessage = '';
@@ -32,7 +46,7 @@ class MasterProvider extends ChangeNotifier {
 
     try {
       _semuaBarang = await _repo.getAllBarang();
-      _terapkanFilterDanPencarian(); // Gunakan fungsi terpusat
+      _terapkanFilter();
     } catch (e) {
       _errorMessage = 'Gagal memuat data: $e';
     }
@@ -41,147 +55,92 @@ class MasterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ─── GANTI FILTER KATEGORI ───────────────────
-  void setKategoriFilter(String kategori) {
-    _kategoriFilter = kategori;
-    _selectedItems.clear(); // Bersihkan centangan jika ganti filter
-    _terapkanFilterDanPencarian();
-  }
-
   // ─── SEARCH real-time ────────────────────────
   Future<void> cariBarang(String keyword) async {
     _searchKeyword = keyword;
-    
-    // Jika data tidak ada di memori lokal, cari ke DB
-    if (keyword.isNotEmpty) {
-      final lokal = _semuaBarang.where((b) {
-        return b.namaBarang.toLowerCase().contains(keyword.toLowerCase()) ||
-            b.kodeScan.toLowerCase().contains(keyword.toLowerCase());
-      }).toList();
-
-      if (lokal.isEmpty) {
-        // Ambil dari DB lalu gabungkan ke semuaBarang (cache)
-        final dariDb = await _repo.searchBarang(keyword);
-        for (var b in dariDb) {
-          if (!_semuaBarang.any((seb) => seb.kodeScan == b.kodeScan)) {
-            _semuaBarang.add(b);
-          }
-        }
-      }
-    }
-    
-    _terapkanFilterDanPencarian();
-  }
-
-  // Fungsi internal untuk memfilter data tampil
-  void _terapkanFilterDanPencarian() {
-    List<Barang> hasil = _semuaBarang;
-
-    // 1. Filter Pencarian Teks
-    if (_searchKeyword.isNotEmpty) {
-      hasil = hasil.where((b) => 
-        b.namaBarang.toLowerCase().contains(_searchKeyword.toLowerCase()) ||
-        b.kodeScan.toLowerCase().contains(_searchKeyword.toLowerCase())
-      ).toList();
-    }
-
-    // 2. Filter Kategori Dropdown
-    if (_kategoriFilter != 'Semua') {
-      hasil = hasil.where((b) => b.kategori == _kategoriFilter).toList();
-    }
-
-    _tampilBarang = hasil;
+    _terapkanFilter();
     notifyListeners();
   }
 
-  // ─── LOGIKA MULTI-SELECT (CENTANG BOX) ───────
-  void toggleItem(String kodeScan) {
-    if (_selectedItems.contains(kodeScan)) {
-      _selectedItems.remove(kodeScan);
-    } else {
-      _selectedItems.add(kodeScan);
-    }
+  // ─── SET FILTER STOK ─────────────────────────
+  void setFilterStok(FilterStok filter) {
+    _filterStok = filter;
+    _terapkanFilter();
     notifyListeners();
   }
 
-  void toggleSelectAll() {
-    // Hanya pilih/hapus yang sedang TAMPIL di layar
-    final visibleKodes = _tampilBarang.map((b) => b.kodeScan).toSet();
-    final allSelected = visibleKodes.every((kode) => _selectedItems.contains(kode));
+  // ─── Terapkan search + filter stok bersama ───
+  void _terapkanFilter() {
+    Iterable<Barang> hasil = _semuaBarang;
 
-    if (allSelected) {
-      _selectedItems.removeAll(visibleKodes);
-    } else {
-      _selectedItems.addAll(visibleKodes);
-    }
-    notifyListeners();
-  }
-
-  void clearSelection() {
-    _selectedItems.clear();
-    notifyListeners();
-  }
-
-  // ─── HAPUS BANYAK BARANG ─────────────────────
-  Future<String?> hapusBarangTerpilih() async {
-    int sukses = 0;
-    for (String kode in _selectedItems) {
-      final berhasil = await _repo.deleteBarang(kode);
-      if (berhasil) sukses++;
+    // 1. Filter stok
+    switch (_filterStok) {
+      case FilterStok.habis:
+        hasil = hasil.where((b) => b.stokSisa == 0);
+        break;
+      case FilterStok.menipis:
+        hasil = hasil.where((b) => b.stokSisa > 0 && b.stokSisa <= batasMenipis);
+        break;
+      case FilterStok.banyak:
+        hasil = hasil.where((b) => b.stokSisa > batasBanyak);
+        break;
+      case FilterStok.semua:
+        break;
     }
 
-    if (sukses > 0) {
-      _semuaBarang.removeWhere((b) => _selectedItems.contains(b.kodeScan));
-      _selectedItems.clear();
-      _terapkanFilterDanPencarian();
-      return null; // Sukses
+    // 2. Filter search keyword
+    if (_searchKeyword.trim().isNotEmpty) {
+      final k = _searchKeyword.toLowerCase();
+      hasil = hasil.where((b) =>
+          b.namaBarang.toLowerCase().contains(k) ||
+          b.kodeScan.toLowerCase().contains(k));
     }
-    return 'Gagal menghapus barang yang dipilih.';
+
+    _tampilBarang = hasil.toList();
   }
 
   // ─── TAMBAH barang baru ──────────────────────
   Future<String?> tambahBarang(Barang barang) async {
     final sudahAda = await _repo.isKodeExist(barang.kodeScan);
-    if (sudahAda) return 'Kode "${barang.kodeScan}" sudah terdaftar!';
+    if (sudahAda) {
+      return 'Kode "${barang.kodeScan}" sudah terdaftar!';
+    }
 
     final berhasil = await _repo.insertBarang(barang);
     if (berhasil) {
       _semuaBarang.add(barang);
       _semuaBarang.sort((a, b) => a.namaBarang.compareTo(b.namaBarang));
-      _terapkanFilterDanPencarian();
-      return null; 
+      _terapkanFilter();
+      notifyListeners();
+      return null;
     }
     return 'Gagal menyimpan barang.';
   }
 
-  /// ─── EDIT barang ─────────────────────────────
-  Future<String?> editBarang(Barang barang, String oldKode) async {
-    // 1. Validasi: Jika kode diubah, pastikan kode baru belum dipakai barang lain!
-    if (barang.kodeScan != oldKode) {
-      final sudahAda = await _repo.isKodeExist(barang.kodeScan);
-      if (sudahAda) return 'Kode "${barang.kodeScan}" sudah dipakai barang lain!';
-    }
-
-    // 2. Panggil fungsi Cascade yang baru
-    final berhasil = await _repo.updateBarangCascade(barang, oldKode);
+  // ─── EDIT barang ─────────────────────────────
+  // kodeScanLama opsional: dipakai kalau kode diubah saat edit,
+  // supaya baris lama di memori tetap ketemu. Kalau tidak diisi,
+  // pakai kodeScan barang itu sendiri.
+  Future<String?> editBarang(Barang barang, [String? kodeScanLama]) async {
+    final kodeLama = kodeScanLama ?? barang.kodeScan;
+    final berhasil = await _repo.updateBarang(barang);
     if (berhasil) {
-      // 3. Timpa data lama dengan data baru di memori lokal (RAM)
-      final idx = _semuaBarang.indexWhere((b) => b.kodeScan == oldKode);
+      final idx = _semuaBarang.indexWhere((b) => b.kodeScan == kodeLama);
       if (idx != -1) _semuaBarang[idx] = barang;
-      
-      _terapkanFilterDanPencarian();
+      _terapkanFilter();
+      notifyListeners();
       return null;
     }
     return 'Gagal memperbarui data.';
   }
 
-  // ─── HAPUS SATU barang ───────────────────────
+  // ─── HAPUS barang ────────────────────────────
   Future<String?> hapusBarang(String kodeScan) async {
     final berhasil = await _repo.deleteBarang(kodeScan);
     if (berhasil) {
       _semuaBarang.removeWhere((b) => b.kodeScan == kodeScan);
-      _selectedItems.remove(kodeScan);
-      _terapkanFilterDanPencarian();
+      _terapkanFilter();
+      notifyListeners();
       return null;
     }
     return 'Gagal menghapus barang.';

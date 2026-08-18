@@ -7,35 +7,42 @@ import 'package:path/path.dart' as p;
 import 'laporan_repository.dart';
 
 // ─────────────────────────────────────────────────────────────────
-// LAPORAN EXPORT SERVICE — generate Excel sesuai format kantor
+// LAPORAN EXPORT SERVICE — pakai package `excel` (bukan syncfusion)
 //
-// Output: 1 file Excel dengan sheet:
-//   - RINGKASAN (KPI + top barang + per kategori)
-//   - 1 sheet per kategori (BUSI, OLI, PART, dll) dengan kolom:
-//       Kode | Nama | Qty Masuk | Harga Astra | Harga Total |
-//       Qty Keluar | Harga Jual | Laba | Modal | Sisa
+// Konsekuensi package excel: header tidak bisa merge bertingkat,
+// jadi header dibuat 1 baris yang jelas. Semua kolom, warna, dan
+// total tetap ada. Angka dihitung di Dart lalu ditulis sebagai
+// angka asli (bisa di-SUM sendiri oleh owner di Excel).
 //
-// Format mengikuti template_laporan_otoscan.xlsx dari kantor.
+// Sheet:
+//   1. REKAP TOTAL  → Jumlah Modal | Laba | Uang | Total
+//                     (header hitam, teks putih, border merah — gambar 2)
+//   2. per kategori → KODE | NAMA | QTY MASUK | HARGA ASTRA | HARGA TOTAL |
+//                     QTY KELUAR | HARGA JUAL | LABA | JUMLAH MODAL | SISA |
+//                     MODAL TIDAK BERPUTAR  (header biru, data hijau,
+//                     qty keluar 0 → pink, baris TOTAL di bawah)
 //
-// CATATAN: pakai package 'excel' (bukan openpyxl). Formula tidak
-//   bisa dipakai langsung, jadi nilai dihitung di Dart lalu ditulis
-//   sebagai angka. Ini lebih aman & cepat untuk dibuka di HP/PC.
+// Definisi REKAP:
+//   Jumlah Modal = nilai modal SELURUH stok gudang (stok × harga astra)
+//   Jumlah Laba  = total laba penjualan periode
+//   Jumlah Uang  = total kas masuk periode (yang dibayar)
+//   Jumlah Total = total omzet penjualan periode
 // ─────────────────────────────────────────────────────────────────
 
 class LaporanExportService {
   final _repo = LaporanRepository();
 
-  // Warna header per kategori (mengikuti template kantor)
-  static const Map<String, String> _warnaKategori = {
-    'BUSI':     'FF1B5E20', // hijau tua
-    'BRG SRLG': 'FF4E342E', // coklat
-    'OLI':      'FF0277BD', // biru
-    'PART':     'FF880E4F', // ungu
-    'NON AHM':  'FFE65100', // oranye
-  };
+  // Format angka Rupiah: positif ; negatif ; nol("Rp -")
+  static const String _fmtRp = r'"Rp" #,##0;-"Rp" #,##0;"Rp" -';
 
-  // ─────────────────────────────────────────────────────────────
-  // EXPORT — generate file Excel, return path file
+  ExcelColor get _biru  => ExcelColor.fromHexString('#1F3864');
+  ExcelColor get _hijau => ExcelColor.fromHexString('#00B050');
+  ExcelColor get _pink  => ExcelColor.fromHexString('#F4B6C2');
+  ExcelColor get _abu   => ExcelColor.fromHexString('#F2F2F2');
+  ExcelColor get _putih => ExcelColor.fromHexString('#FFFFFF');
+  ExcelColor get _hitam => ExcelColor.fromHexString('#000000');
+  ExcelColor get _merah => ExcelColor.fromHexString('#FF0000');
+
   // ─────────────────────────────────────────────────────────────
   Future<String> exportLaporan({
     required String dari,
@@ -43,313 +50,246 @@ class LaporanExportService {
     required String labelPeriode,
   }) async {
     final excel = Excel.createExcel();
+    final String? defaultSheet = excel.getDefaultSheet();
 
-    // Hapus sheet default
-    final defaultSheet = excel.getDefaultSheet();
+    // Sheet 1: REKAP TOTAL
+    await _isiRekap(excel, dari, sampai, labelPeriode);
 
-    // ── SHEET 1: RINGKASAN ──
-    await _buatSheetRingkasan(excel, dari, sampai, labelPeriode);
-
-    // ── SHEET per kategori ──
+    // Sheet per kategori
     final kategoris = await _repo.daftarKategori();
     for (final kat in kategoris) {
-      await _buatSheetKategori(excel, kat, dari, sampai);
+      await _isiKategori(excel, kat, dari, sampai, labelPeriode);
     }
 
-    // Hapus sheet default kalau masih ada & bukan satu-satunya
-    if (defaultSheet != null && excel.sheets.length > 1) {
+    // Hapus sheet default kosong
+    if (defaultSheet != null &&
+        defaultSheet != 'REKAP TOTAL' &&
+        excel.sheets.length > 1) {
       excel.delete(defaultSheet);
     }
 
-    // ── SIMPAN FILE ──
+    // Simpan
     final dir = await getApplicationDocumentsDirectory();
     final folder = Directory(p.join(dir.path, 'OtoScan_Laporan'));
-    if (!await folder.exists()) {
-      await folder.create(recursive: true);
-    }
+    if (!await folder.exists()) await folder.create(recursive: true);
 
     final now = DateTime.now();
-    final stamp = '${now.year}${now.month.toString().padLeft(2,'0')}${now.day.toString().padLeft(2,'0')}'
-                  '_${now.hour.toString().padLeft(2,'0')}${now.minute.toString().padLeft(2,'0')}';
-    final fileName = 'Laporan_OtoScan_$stamp.xlsx';
-    final filePath = p.join(folder.path, fileName);
+    final stamp = '${now.year}${_p2(now.month)}${_p2(now.day)}_${_p2(now.hour)}${_p2(now.minute)}';
+    final filePath = p.join(folder.path, 'Laporan_OtoScan_$stamp.xlsx');
 
     final bytes = excel.save();
-    if (bytes == null) {
-      throw Exception('Gagal generate file Excel');
-    }
-    final file = File(filePath);
-    await file.writeAsBytes(bytes);
+    if (bytes == null) throw Exception('Gagal generate Excel');
+    await File(filePath).writeAsBytes(bytes, flush: true);
 
     return filePath;
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // SHEET RINGKASAN
-  // ─────────────────────────────────────────────────────────────
-  Future<void> _buatSheetRingkasan(
-    Excel excel, String dari, String sampai, String labelPeriode,
-  ) async {
-    final sheet = excel['RINGKASAN'];
+  String _p2(int n) => n.toString().padLeft(2, '0');
 
-    final ringkasan = await _repo.ringkasanPeriode(dari: dari, sampai: sampai);
-    final topBarang = await _repo.topBarangTerlaris(dari: dari, sampai: sampai, limit: 10);
-    final perKategori = await _repo.ringkasanPerKategori(dari: dari, sampai: sampai);
-    final modalTidak = await _repo.modalTidakBerputar(dari: dari, sampai: sampai);
-    final piutang = await _repo.totalPiutangAktif();
-
-    int row = 0;
-
-    // Judul
-    final judulCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row));
-    judulCell.value = TextCellValue('LAPORAN PENJUALAN — OTOSCAN LOGISTIK');
-    judulCell.cellStyle = CellStyle(
-      bold: true, fontSize: 16,
-      fontColorHex: ExcelColor.fromHexString('FF1B5E20'),
-    );
-    row++;
-
-    final periodeCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row));
-    periodeCell.value = TextCellValue('Periode: $labelPeriode');
-    periodeCell.cellStyle = CellStyle(italic: true, fontSize: 11);
-    row += 2;
-
-    // ── Section: KPI Keuangan ──
-    _tulisHeader(sheet, row, 'RINGKASAN KEUANGAN', 'FF1B5E20');
-    row++;
-
-    final kpiData = [
-      ['Omzet (Total Penjualan)', ringkasan['omzet'] ?? 0],
-      ['Laba Kotor', ringkasan['totalLaba'] ?? 0],
-      ['Modal Terjual (HPP)', ringkasan['totalModal'] ?? 0],
-      ['Uang Masuk (Tunai)', ringkasan['totalDibayar'] ?? 0],
-      ['Hutang Baru (Periode Ini)', ringkasan['totalHutangBaru'] ?? 0],
-      ['Total Piutang Aktif (Semua)', piutang],
-      ['Modal Tidak Berputar', modalTidak['modalTidakLaku'] ?? 0],
-    ];
-
-    for (final item in kpiData) {
-      final labelCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row));
-      labelCell.value = TextCellValue(item[0] as String);
-      final valCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row));
-      valCell.value = IntCellValue(item[1] as int);
-      valCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '#,##0'));
-      row++;
-    }
-    row++;
-
-    // ── Section: KPI Transaksi ──
-    _tulisHeader(sheet, row, 'STATISTIK TRANSAKSI', 'FF0277BD');
-    row++;
-
-    final statData = [
-      ['Jumlah Nota', ringkasan['jumlahNota'] ?? 0],
-      ['Jumlah Item Terjual', ringkasan['jumlahItem'] ?? 0],
-      ['Rata-rata per Nota', ringkasan['rataRataPerNota'] ?? 0],
-    ];
-    for (final item in statData) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row)).value =
-          TextCellValue(item[0] as String);
-      final valCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row));
-      valCell.value = IntCellValue(item[1] as int);
-      valCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '#,##0'));
-      row++;
-    }
-    row++;
-
-    // ── Section: Top 10 Barang Terlaris ──
-    _tulisHeader(sheet, row, 'TOP 10 BARANG TERLARIS', 'FF880E4F');
-    row++;
-
-    // Header tabel
-    final headerTop = ['No', 'Nama Barang', 'Kategori', 'Qty Terjual', 'Omzet', 'Laba'];
-    for (int c = 0; c < headerTop.length; c++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: row));
-      cell.value = TextCellValue(headerTop[c]);
-      cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('FFF3E5F5'));
-    }
-    row++;
-
-    int rank = 1;
-    for (final b in topBarang) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row)).value = IntCellValue(rank);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row)).value = TextCellValue(b['namaBarang'] as String);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row)).value = TextCellValue(b['kategori'] as String);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row)).value = IntCellValue(b['totalQty'] as int);
-      final omzetCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row));
-      omzetCell.value = IntCellValue(b['totalOmzet'] as int);
-      omzetCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '#,##0'));
-      final labaCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row));
-      labaCell.value = IntCellValue(b['totalLaba'] as int);
-      labaCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '#,##0'));
-      row++;
-      rank++;
-    }
-    row++;
-
-    // ── Section: Breakdown per Kategori ──
-    _tulisHeader(sheet, row, 'PENJUALAN PER KATEGORI', 'FFE65100');
-    row++;
-
-    final headerKat = ['Kategori', 'Qty Terjual', 'Omzet', 'Laba'];
-    for (int c = 0; c < headerKat.length; c++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: row));
-      cell.value = TextCellValue(headerKat[c]);
-      cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('FFFFE0B2'));
-    }
-    row++;
-
-    for (final k in perKategori) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row)).value = TextCellValue(k['kategori'] as String);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row)).value = IntCellValue(k['totalQty'] as int);
-      final oCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row));
-      oCell.value = IntCellValue(k['totalOmzet'] as int);
-      oCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '#,##0'));
-      final lCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row));
-      lCell.value = IntCellValue(k['totalLaba'] as int);
-      lCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '#,##0'));
-      row++;
-    }
-
-    // Lebar kolom
-    sheet.setColumnWidth(0, 28);
-    sheet.setColumnWidth(1, 32);
-    sheet.setColumnWidth(2, 16);
-    sheet.setColumnWidth(3, 14);
-    sheet.setColumnWidth(4, 16);
-    sheet.setColumnWidth(5, 16);
+  String _namaSheet(String kat) {
+    var s = kat.replaceAll(RegExp(r'[:\\/?*\[\]]'), '');
+    if (s.length > 31) s = s.substring(0, 31);
+    return s;
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // SHEET PER KATEGORI
-  // ─────────────────────────────────────────────────────────────
-  Future<void> _buatSheetKategori(
-    Excel excel, String kategori, String dari, String sampai,
+  // ── Helper set cell ──────────────────────────────────────────
+  void _teks(Sheet sh, int c, int r, String v, CellStyle st) {
+    final cell = sh.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
+    cell.value = TextCellValue(v);
+    cell.cellStyle = st;
+  }
+
+  void _angka(Sheet sh, int c, int r, int v, CellStyle st) {
+    final cell = sh.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
+    cell.value = IntCellValue(v);
+    cell.cellStyle = st;
+  }
+
+  Border _bd([ExcelColor? warna]) =>
+      Border(borderStyle: BorderStyle.Thin, borderColorHex: warna);
+
+  // ═════════════════════════════════════════════════════════════
+  // SHEET REKAP TOTAL (gaya gambar 2)
+  // ═════════════════════════════════════════════════════════════
+  Future<void> _isiRekap(
+    Excel excel, String dari, String sampai, String labelPeriode,
   ) async {
-    final data = await _repo.laporanPerKategori(
-      kategori: kategori, dari: dari, sampai: sampai,
-    );
+    final sheet = excel['REKAP TOTAL'];
 
-    // Nama sheet maksimal 31 char & tidak boleh karakter aneh
-    final sheetName = kategori.length > 28 ? kategori.substring(0, 28) : kategori;
-    final sheet = excel[sheetName];
+    final ringkasan = await _repo.ringkasanPeriode(dari: dari, sampai: sampai);
+    final modalStok = await _repo.modalTidakBerputar(dari: dari, sampai: sampai);
 
-    final warna = _warnaKategori[kategori] ?? 'FF424242';
-
-    int row = 0;
+    final jumlahModal = modalStok['totalModalStok'] ?? 0; // nilai seluruh stok
+    final jumlahLaba  = ringkasan['totalLaba'] ?? 0;
+    final jumlahUang  = ringkasan['totalDibayar'] ?? 0;
+    final jumlahTotal = ringkasan['omzet'] ?? 0;
 
     // Judul
-    final judul = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row));
-    judul.value = TextCellValue('LAPORAN STOK — $kategori');
-    judul.cellStyle = CellStyle(
-      bold: true, fontSize: 14,
-      fontColorHex: ExcelColor.fromHexString(warna),
-    );
-    row += 2;
+    _teks(sheet, 0, 0, 'REKAP LAPORAN — OTOSCAN LOGISTIK',
+        CellStyle(bold: true, fontSize: 15, fontColorHex: _biru));
+    _teks(sheet, 0, 1, 'Periode: $labelPeriode',
+        CellStyle(italic: true, fontSize: 10));
 
-    // Header tabel
+    // Header hitam (baris index 3)
+    final headerStyle = CellStyle(
+      backgroundColorHex: _hitam,
+      fontColorHex: _putih,
+      bold: true,
+      fontSize: 12,
+      horizontalAlign: HorizontalAlign.Center,
+      verticalAlign: VerticalAlign.Center,
+      leftBorder: _bd(_merah), rightBorder: _bd(_merah),
+      topBorder: _bd(_merah), bottomBorder: _bd(_merah),
+    );
+    final headers = ['Jumlah Modal', 'Jumlah Laba', 'Jumlah Uang', 'Jumlah Total'];
+    for (int i = 0; i < headers.length; i++) {
+      _teks(sheet, i, 3, headers[i], headerStyle);
+    }
+
+    // Value hitam (baris index 4)
+    final valStyle = CellStyle(
+      backgroundColorHex: _hitam,
+      fontColorHex: _putih,
+      bold: true,
+      fontSize: 12,
+      numberFormat: NumFormat.custom(formatCode: _fmtRp),
+      horizontalAlign: HorizontalAlign.Center,
+      leftBorder: _bd(_merah), rightBorder: _bd(_merah),
+      topBorder: _bd(_merah), bottomBorder: _bd(_merah),
+    );
+    _angka(sheet, 0, 4, jumlahModal, valStyle);
+    _angka(sheet, 1, 4, jumlahLaba, valStyle);
+    _angka(sheet, 2, 4, jumlahUang, valStyle);
+    _angka(sheet, 3, 4, jumlahTotal, valStyle);
+
+    // Keterangan
+    final ketStyle = CellStyle(italic: true, fontSize: 9, fontColorHex: ExcelColor.fromHexString('#666666'));
+    _teks(sheet, 0, 6, 'Keterangan:', CellStyle(bold: true, fontSize: 9));
+    _teks(sheet, 0, 7, 'Jumlah Modal = nilai modal seluruh stok tersimpan di gudang (stok x harga astra)', ketStyle);
+    _teks(sheet, 0, 8, 'Jumlah Laba  = total keuntungan penjualan pada periode ini', ketStyle);
+    _teks(sheet, 0, 9, 'Jumlah Uang  = total uang tunai yang sudah diterima (kas masuk)', ketStyle);
+    _teks(sheet, 0, 10, 'Jumlah Total = total nilai penjualan / omzet pada periode ini', ketStyle);
+
+    sheet.setColumnWidth(0, 22);
+    sheet.setColumnWidth(1, 20);
+    sheet.setColumnWidth(2, 20);
+    sheet.setColumnWidth(3, 20);
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // SHEET PER KATEGORI (gaya gambar 1, header 1 baris tanpa merge)
+  // ═════════════════════════════════════════════════════════════
+  Future<void> _isiKategori(
+    Excel excel, String kategori, String dari, String sampai, String labelPeriode,
+  ) async {
+    final data = await _repo.laporanPerKategori(
+        kategori: kategori, dari: dari, sampai: sampai);
+
+    final sheet = excel[_namaSheet(kategori)];
+
+    // Judul
+    _teks(sheet, 0, 0, 'LAPORAN $kategori — $labelPeriode',
+        CellStyle(bold: true, fontSize: 13, fontColorHex: _biru));
+
+    // Header (baris index 2)
+    const headerRow = 2;
+    final headerStyle = CellStyle(
+      backgroundColorHex: _biru,
+      fontColorHex: _putih,
+      bold: true,
+      fontSize: 10,
+      horizontalAlign: HorizontalAlign.Center,
+      verticalAlign: VerticalAlign.Center,
+      textWrapping: TextWrapping.WrapText,
+      leftBorder: _bd(), rightBorder: _bd(), topBorder: _bd(), bottomBorder: _bd(),
+    );
     final headers = [
       'KODE', 'NAMA SUKU CADANG',
-      'QTY MASUK', 'HARGA ASTRA', 'HARGA TOTAL',
-      'QTY KELUAR', 'HARGA JUAL', 'LABA (Rp)', 'MODAL (Rp)', 'SISA',
+      'QTY\nMASUK', 'HARGA ASTRA', 'HARGA TOTAL',
+      'QTY\nKELUAR', 'HARGA JUAL', 'LABA (Rp)', 'JUMLAH MODAL (Rp)',
+      'SISA', 'MODAL TIDAK\nBERPUTAR (Rp)',
     ];
-    for (int c = 0; c < headers.length; c++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: row));
-      cell.value = TextCellValue(headers[c]);
-      cell.cellStyle = CellStyle(
-        bold: true,
-        fontColorHex: ExcelColor.fromHexString('FFFFFFFF'),
-        backgroundColorHex: ExcelColor.fromHexString(warna),
-        horizontalAlign: HorizontalAlign.Center,
-      );
+    for (int i = 0; i < headers.length; i++) {
+      _teks(sheet, i, headerRow, headers[i], headerStyle);
     }
-    row++;
 
-    final int headerRow = row - 1;
-    final int dataStart = row;
-
-    // Data rows
-    int totalLaba = 0;
-    int totalModal = 0;
-    int totalHargaTotal = 0;
+    // Data mulai baris index 3
+    int r = headerRow + 1;
+    int totHargaTotal = 0, totLaba = 0, totModal = 0, totTdkBerputar = 0;
 
     for (final item in data) {
-      final qtyMasuk  = item['qtyMasuk'] as int;
+      final qtyMasuk   = item['qtyMasuk'] as int;
       final hargaAstra = item['hargaAstra'] as int;
-      final qtyKeluar = item['qtyKeluar'] as int;
-      final hargaJual = item['hargaJual'] as int;
-      final stokSisa  = item['stokSisa'] as int;
+      final qtyKeluar  = item['qtyKeluar'] as int;
+      final hargaJual  = item['hargaJual'] as int;
 
-      // Hitung di Dart (karena package excel formula kurang reliable)
-      final hargaTotal = qtyMasuk * hargaAstra;       // modal barang masuk
-      final laba = (hargaJual - hargaAstra) * qtyKeluar; // laba dari yang terjual
-      final modal = qtyKeluar * hargaAstra;            // modal yang terjual
+      // Hitung di Dart (sama seperti formula office)
+      final hargaTotal   = qtyMasuk * hargaAstra;         // C*D
+      final laba         = (hargaJual - hargaAstra) * qtyKeluar; // (G-D)*F
+      final jumlahModal  = qtyKeluar * hargaAstra;        // F*D
+      final sisa         = qtyMasuk - qtyKeluar;          // C-F
+      final tdkBerputar  = sisa * hargaAstra;             // (C-F)*D
 
-      totalHargaTotal += hargaTotal;
-      totalLaba += laba;
-      totalModal += modal;
+      totHargaTotal += hargaTotal;
+      totLaba += laba;
+      totModal += jumlahModal;
+      totTdkBerputar += tdkBerputar;
 
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row)).value = TextCellValue(item['kodeScan'] as String);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row)).value = TextCellValue(item['namaBarang'] as String);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row)).value = IntCellValue(qtyMasuk);
-      _setRp(sheet, 3, row, hargaAstra);
-      _setRp(sheet, 4, row, hargaTotal);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row)).value = IntCellValue(qtyKeluar);
-      _setRp(sheet, 6, row, hargaJual);
-      _setRp(sheet, 7, row, laba);
-      _setRp(sheet, 8, row, modal);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: row)).value = IntCellValue(stokSisa);
+      // Warna dasar: hijau, tapi qty keluar 0 → pink
+      final bg = qtyKeluar == 0 ? _pink : _hijau;
 
-      // Zebra stripe
-      if ((row - dataStart) % 2 == 1) {
-        for (int c = 0; c < 10; c++) {
-          final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: row));
-          cell.cellStyle = (cell.cellStyle ?? CellStyle()).copyWith(
-            backgroundColorHexVal: ExcelColor.fromHexString('FFF5F5F5'),
-          );
-        }
-      }
-      row++;
+      final sTeks  = CellStyle(backgroundColorHex: bg, fontSize: 10,
+          leftBorder: _bd(), rightBorder: _bd(), topBorder: _bd(), bottomBorder: _bd());
+      final sNum   = CellStyle(backgroundColorHex: bg, fontSize: 10,
+          horizontalAlign: HorizontalAlign.Center,
+          leftBorder: _bd(), rightBorder: _bd(), topBorder: _bd(), bottomBorder: _bd());
+      final sRp    = CellStyle(backgroundColorHex: bg, fontSize: 10,
+          numberFormat: NumFormat.custom(formatCode: _fmtRp),
+          leftBorder: _bd(), rightBorder: _bd(), topBorder: _bd(), bottomBorder: _bd());
+
+      _teks(sheet, 0, r, item['kodeScan'] as String, sTeks);
+      _teks(sheet, 1, r, item['namaBarang'] as String, sTeks);
+      _angka(sheet, 2, r, qtyMasuk, sNum);
+      _angka(sheet, 3, r, hargaAstra, sRp);
+      _angka(sheet, 4, r, hargaTotal, sRp);
+      _angka(sheet, 5, r, qtyKeluar, sNum);
+      _angka(sheet, 6, r, hargaJual, sRp);
+      _angka(sheet, 7, r, laba, sRp);
+      _angka(sheet, 8, r, jumlahModal, sRp);
+      _angka(sheet, 9, r, sisa, sNum);
+      _angka(sheet, 10, r, tdkBerputar, sRp);
+      r++;
     }
 
     // Baris TOTAL
-    row++;
-    final totalLabel = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row));
-    totalLabel.value = TextCellValue('TOTAL');
-    totalLabel.cellStyle = CellStyle(bold: true);
-
-    _setRp(sheet, 4, row, totalHargaTotal, bold: true);
-    _setRp(sheet, 7, row, totalLaba, bold: true);
-    _setRp(sheet, 8, row, totalModal, bold: true);
+    final totTeks = CellStyle(backgroundColorHex: _abu, bold: true, fontSize: 10,
+        leftBorder: _bd(), rightBorder: _bd(), topBorder: _bd(), bottomBorder: _bd());
+    final totRp = CellStyle(backgroundColorHex: _abu, bold: true, fontSize: 10,
+        numberFormat: NumFormat.custom(formatCode: _fmtRp),
+        leftBorder: _bd(), rightBorder: _bd(), topBorder: _bd(), bottomBorder: _bd());
+    _teks(sheet, 0, r, 'TOTAL', totTeks);
+    _teks(sheet, 1, r, '', totTeks);
+    _teks(sheet, 2, r, '', totTeks);
+    _teks(sheet, 3, r, '', totTeks);
+    _angka(sheet, 4, r, totHargaTotal, totRp);
+    _teks(sheet, 5, r, '', totTeks);
+    _teks(sheet, 6, r, '', totTeks);
+    _angka(sheet, 7, r, totLaba, totRp);
+    _angka(sheet, 8, r, totModal, totRp);
+    _teks(sheet, 9, r, '', totTeks);
+    _angka(sheet, 10, r, totTdkBerputar, totRp);
 
     // Lebar kolom
-    sheet.setColumnWidth(0, 16);
-    sheet.setColumnWidth(1, 32);
-    for (int c = 2; c < 10; c++) {
-      sheet.setColumnWidth(c, 13);
-    }
-
-    // Freeze header
-    // (package excel belum support freeze pane reliable, skip)
-  }
-
-  // ── HELPER ───────────────────────────────────────────────────
-  void _tulisHeader(Sheet sheet, int row, String teks, String warna) {
-    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row));
-    cell.value = TextCellValue(teks);
-    cell.cellStyle = CellStyle(
-      bold: true, fontSize: 12,
-      fontColorHex: ExcelColor.fromHexString('FFFFFFFF'),
-      backgroundColorHex: ExcelColor.fromHexString(warna),
-    );
-  }
-
-  void _setRp(Sheet sheet, int col, int row, int nilai, {bool bold = false}) {
-    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row));
-    cell.value = IntCellValue(nilai);
-    cell.cellStyle = CellStyle(
-      bold: bold,
-      numberFormat: NumFormat.custom(formatCode: '#,##0'),
-    );
+    sheet.setColumnWidth(0, 18);
+    sheet.setColumnWidth(1, 28);
+    sheet.setColumnWidth(2, 9);
+    sheet.setColumnWidth(3, 14);
+    sheet.setColumnWidth(4, 15);
+    sheet.setColumnWidth(5, 9);
+    sheet.setColumnWidth(6, 14);
+    sheet.setColumnWidth(7, 15);
+    sheet.setColumnWidth(8, 16);
+    sheet.setColumnWidth(9, 8);
+    sheet.setColumnWidth(10, 18);
   }
 }
