@@ -249,4 +249,71 @@ class LaporanRepository {
     ''');
     return rows.map((r) => r['kategori'] as String).toList();
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // DETAIL BARANG KELUAR per periode — item apa saja yang terjual
+  //
+  // Digabung per barang (SUM qty) supaya ringkas. Kalau mau
+  // benar-benar per transaksi, lihat detailKeluarPerNota di bawah.
+  // ─────────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> detailBarangKeluar({
+    required String dari,
+    required String sampai,
+  }) async {
+    final db = await _db;
+    final rows = await db.rawQuery('''
+      SELECT
+        d.kode_scan,
+        d.nama_barang,
+        d.kategori,
+        SUM(d.qty)            AS total_qty,
+        SUM(d.subtotal_jual)  AS total_jual,
+        SUM(d.subtotal_laba)  AS total_laba
+      FROM transaksi_keluar_detail d
+      JOIN transaksi_keluar_header h ON d.no_nota = h.no_nota
+      WHERE h.tanggal >= ? AND h.tanggal <= ?
+      GROUP BY d.kode_scan, d.nama_barang, d.kategori
+      ORDER BY total_qty DESC
+    ''', [dari, sampai]);
+
+    return rows.map((r) => {
+      'kodeScan':   r['kode_scan'] as String,
+      'namaBarang': r['nama_barang'] as String,
+      'kategori':   r['kategori'] as String,
+      'totalQty':   (r['total_qty'] as int?) ?? 0,
+      'totalJual':  (r['total_jual'] as int?) ?? 0,
+      'totalLaba':  (r['total_laba'] as int?) ?? 0,
+    }).toList();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // DETAIL BARANG MASUK per periode — item apa saja yang masuk
+  // ─────────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> detailBarangMasuk({
+    required String dari,
+    required String sampai,
+  }) async {
+    final db = await _db;
+    final rows = await db.rawQuery('''
+      SELECT
+        tm.kode_scan,
+        mb.nama_barang,
+        mb.kategori,
+        SUM(tm.qty)                          AS total_qty,
+        SUM(tm.qty * tm.harga_astra_satuan)  AS total_nilai
+      FROM transaksi_masuk tm
+      LEFT JOIN master_barang mb ON tm.kode_scan = mb.kode_scan
+      WHERE tm.tanggal >= ? AND tm.tanggal <= ?
+      GROUP BY tm.kode_scan, mb.nama_barang, mb.kategori
+      ORDER BY total_qty DESC
+    ''', [dari, sampai]);
+
+    return rows.map((r) => {
+      'kodeScan':   r['kode_scan'] as String,
+      'namaBarang': (r['nama_barang'] as String?) ?? '(barang dihapus)',
+      'kategori':   (r['kategori'] as String?) ?? '-',
+      'totalQty':   (r['total_qty'] as int?) ?? 0,
+      'totalNilai': (r['total_nilai'] as int?) ?? 0,
+    }).toList();
+  }
 }

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'controller/laporan_provider.dart';
 import '../data/laporan_export_service.dart';
 
+
 // ─────────────────────────────────────────────────────────────────
 // LAPORAN VIEW — dashboard laporan untuk owner
 //
@@ -214,6 +215,8 @@ class _LaporanViewState extends State<LaporanView> {
                     _buildTopBarang(p),
                     const SizedBox(height: 16),
                     _buildPerKategori(p),
+                    const SizedBox(height: 16),
+                    _buildDetailTransaksi(p),
                   ],
                 ]),
               );
@@ -619,6 +622,15 @@ class _LaporanViewState extends State<LaporanView> {
     );
   }
 
+  // ── DETAIL TRANSAKSI (Keluar & Masuk) ────────────────────────
+  Widget _buildDetailTransaksi(LaporanProvider p) {
+    return _DetailTransaksiCard(
+      detailKeluar: p.detailKeluar,
+      detailMasuk: p.detailMasuk,
+      rp: _rp,
+    );
+  }
+
   Color _warnaKategori(String kat) {
     switch (kat) {
       case 'BUSI':     return _hijauTua;
@@ -628,5 +640,171 @@ class _LaporanViewState extends State<LaporanView> {
       case 'NON AHM':  return Colors.orange.shade800;
       default:         return Colors.grey.shade600;
     }
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════
+// DETAIL TRANSAKSI CARD — toggle "Barang Keluar" / "Barang Masuk"
+// Menampilkan item apa saja yang keluar/masuk pada periode terpilih.
+// ═════════════════════════════════════════════════════════════════
+class _DetailTransaksiCard extends StatefulWidget {
+  final List<Map<String, dynamic>> detailKeluar;
+  final List<Map<String, dynamic>> detailMasuk;
+  final String Function(int) rp;
+
+  const _DetailTransaksiCard({
+    required this.detailKeluar,
+    required this.detailMasuk,
+    required this.rp,
+  });
+
+  @override
+  State<_DetailTransaksiCard> createState() => _DetailTransaksiCardState();
+}
+
+class _DetailTransaksiCardState extends State<_DetailTransaksiCard> {
+  bool _tampilKeluar = true; // true = keluar, false = masuk
+
+  static const Color _merah = Color(0xFFB71C1C);
+  static const Color _hijauTua = Color(0xFF1B5E20);
+
+  @override
+  Widget build(BuildContext context) {
+    final keluar = _tampilKeluar;
+    final list = keluar ? widget.detailKeluar : widget.detailMasuk;
+    final warna = keluar ? _merah : _hijauTua;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.receipt_long_rounded, color: warna, size: 18),
+          const SizedBox(width: 8),
+          const Text('Detail Barang',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const Spacer(),
+          // Toggle
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              _toggleBtn('Keluar', keluar, _merah, () => setState(() => _tampilKeluar = true)),
+              _toggleBtn('Masuk', !keluar, _hijauTua, () => setState(() => _tampilKeluar = false)),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          keluar ? 'Barang yang terjual pada periode ini' : 'Barang yang masuk pada periode ini',
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+        ),
+        const SizedBox(height: 12),
+        if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: Text(
+              keluar ? 'Belum ada barang keluar' : 'Belum ada barang masuk',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+            )),
+          )
+        else ...[
+          // Header baris
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Row(children: [
+              const Expanded(flex: 5, child: Text('Nama Barang',
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.grey))),
+              const Expanded(flex: 2, child: Text('Qty', textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.grey))),
+              Expanded(flex: 3, child: Text(keluar ? 'Omzet' : 'Nilai', textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.grey))),
+              if (keluar)
+                const Expanded(flex: 3, child: Text('Laba', textAlign: TextAlign.right,
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Colors.grey))),
+            ]),
+          ),
+          Divider(height: 1, color: Colors.grey.shade200),
+          // Data (dibatasi tinggi + scroll kalau banyak)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              itemCount: list.length,
+              separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade100),
+              itemBuilder: (_, i) {
+                final item = list[i];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  child: Row(children: [
+                    Expanded(flex: 5, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(item['namaBarang'] as String,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          overflow: TextOverflow.ellipsis),
+                      Text('${item['kodeScan']} • ${item['kategori']}',
+                          style: const TextStyle(fontSize: 9.5, color: Colors.grey, fontFamily: 'monospace'),
+                          overflow: TextOverflow.ellipsis),
+                    ])),
+                    Expanded(flex: 2, child: Text('${item['totalQty']}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: warna))),
+                    Expanded(flex: 3, child: Text(
+                        widget.rp((keluar ? item['totalJual'] : item['totalNilai']) as int),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 11))),
+                    if (keluar)
+                      Expanded(flex: 3, child: Text(widget.rp(item['totalLaba'] as int),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(fontSize: 11, color: _hijauTua, fontWeight: FontWeight.w500))),
+                  ]),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Ringkasan total
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: warna.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              Text('${list.length} jenis barang',
+                  style: TextStyle(fontSize: 11, color: warna, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text('Total qty: ${list.fold<int>(0, (s, e) => s + (e['totalQty'] as int))}',
+                  style: TextStyle(fontSize: 11, color: warna, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Widget _toggleBtn(String label, bool aktif, Color warna, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: aktif ? warna : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(label, style: TextStyle(
+          fontSize: 12,
+          fontWeight: aktif ? FontWeight.w600 : FontWeight.normal,
+          color: aktif ? Colors.white : Colors.grey.shade600,
+        )),
+      ),
+    );
   }
 }

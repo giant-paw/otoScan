@@ -34,6 +34,8 @@ class LaporanProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _perKategori = [];
   Map<String, int> _modalTidakBerputar = {};
   int _totalPiutang = 0;
+  List<Map<String, dynamic>> _detailKeluar = [];
+  List<Map<String, dynamic>> _detailMasuk = [];
 
   bool _isLoading = false;
   String _errorPesan = '';
@@ -51,6 +53,8 @@ class LaporanProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get perKategori => _perKategori;
   Map<String, int>           get modalTidakBerputar => _modalTidakBerputar;
   int                        get totalPiutang => _totalPiutang;
+  List<Map<String, dynamic>> get detailKeluar => _detailKeluar;
+  List<Map<String, dynamic>> get detailMasuk  => _detailMasuk;
 
   // Helper: ringkasan values dengan default 0
   int get omzet           => _ringkasan['omzet'] ?? 0;
@@ -124,6 +128,8 @@ class LaporanProvider extends ChangeNotifier {
         _repo.ringkasanPerKategori(dari: dari, sampai: sampai),
         _repo.modalTidakBerputar(dari: dari, sampai: sampai),
         _repo.totalPiutangAktif(),
+        _repo.detailBarangKeluar(dari: dari, sampai: sampai),
+        _repo.detailBarangMasuk(dari: dari, sampai: sampai),
       ]);
 
       _ringkasan          = results[0] as Map<String, int>;
@@ -132,6 +138,8 @@ class LaporanProvider extends ChangeNotifier {
       _perKategori        = results[3] as List<Map<String, dynamic>>;
       _modalTidakBerputar = results[4] as Map<String, int>;
       _totalPiutang       = results[5] as int;
+      _detailKeluar       = results[6] as List<Map<String, dynamic>>;
+      _detailMasuk        = results[7] as List<Map<String, dynamic>>;
     } catch (e) {
       _errorPesan = 'Gagal memuat laporan: $e';
     }

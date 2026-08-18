@@ -7,6 +7,7 @@ import 'transaksi_keluar_header_model.dart';
 import 'transaksi_keluar_detail_model.dart';
 import 'pembayaran_hutang_model.dart';
 
+
 // ─────────────────────────────────────────────────────────────────
 // REPOSITORY UNTUK CHECKOUT (BAYAR) DAN LIST TRANSAKSI KELUAR
 //
@@ -146,7 +147,9 @@ class TransaksiKeluarRepository {
           kembalian:             kembalian,
           status:                isLunas ? StatusNota.lunas : StatusNota.hutang,
           pelangganId:           pelangganId,
-          namaPelangganSnapshot: namaPelanggan?.trim(),
+          namaPelangganSnapshot: (namaPelanggan == null || namaPelanggan.trim().isEmpty)
+              ? null
+              : PelangganRepository.normalisasiNama(namaPelanggan),
           noHpSnapshot:          noHpPelanggan?.trim(),
           catatan:               catatan?.trim(),
           tanggalLunas:          isLunas ? tanggal : null,

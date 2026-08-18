@@ -10,6 +10,23 @@ class PelangganRepository {
   String _now() => DateTime.now().toIso8601String();
 
   // ─────────────────────────────────────────────────────────────
+  // NORMALISASI NAMA — supaya "kenji", "KENJI", "Kenji" dianggap
+  // orang yang sama. Hasil: Title Case + spasi dirapikan.
+  //   "  budi   SANTOSO " → "Budi Santoso"
+  // Dipakai di semua titik simpan nama pelanggan.
+  // ─────────────────────────────────────────────────────────────
+  static String normalisasiNama(String nama) {
+    final rapi = nama.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (rapi.isEmpty) return '';
+    return rapi
+        .split(' ')
+        .map((kata) => kata.isEmpty
+            ? kata
+            : kata[0].toUpperCase() + kata.substring(1).toLowerCase())
+        .join(' ');
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // CREATE
   // Return: id pelanggan baru, atau null jika gagal
   // ─────────────────────────────────────────────────────────────
@@ -18,7 +35,7 @@ class PelangganRepository {
       final db = await _db;
       final now = _now();
       final id = await db.insert('pelanggan', {
-        'nama':                p.nama.trim(),
+        'nama':                normalisasiNama(p.nama),
         'no_hp':               p.noHp?.trim(),
         'alamat':              p.alamat?.trim(),
         'catatan':             p.catatan?.trim(),
@@ -43,7 +60,7 @@ class PelangganRepository {
       await db.update(
         'pelanggan',
         {
-          'nama':       p.nama.trim(),
+          'nama':       normalisasiNama(p.nama),
           'no_hp':      p.noHp?.trim(),
           'alamat':     p.alamat?.trim(),
           'catatan':    p.catatan?.trim(),
@@ -149,14 +166,15 @@ class PelangganRepository {
     String? alamat,
     String? catatan,
   }) async {
-    final namaTrim = nama.trim();
+    final namaTrim = normalisasiNama(nama);
     final hpTrim   = noHp?.trim() ?? '';
 
-    // Coba cari yang persis sama (nama + HP)
+    // Coba cari yang persis sama (nama + HP) — COLLATE NOCASE agar
+    // "kenji" cocok dengan "Kenji"/"KENJI" (dianggap orang sama)
     if (hpTrim.isNotEmpty) {
       final existing = await txn.query(
         'pelanggan',
-        where: 'nama = ? AND no_hp = ?',
+        where: 'nama = ? COLLATE NOCASE AND no_hp = ?',
         whereArgs: [namaTrim, hpTrim],
         limit: 1,
       );
@@ -167,7 +185,7 @@ class PelangganRepository {
       // Tanpa HP, cari yang nama-nya sama (kemungkinan pelanggan walk-in)
       final existing = await txn.query(
         'pelanggan',
-        where: 'nama = ? AND (no_hp IS NULL OR no_hp = ?)',
+        where: 'nama = ? COLLATE NOCASE AND (no_hp IS NULL OR no_hp = ?)',
         whereArgs: [namaTrim, ''],
         limit: 1,
       );
